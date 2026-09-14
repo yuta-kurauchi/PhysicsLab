@@ -32,5 +32,12 @@ FetchContent_MakeAvailable(SDL3)
 # 実行ファイルを作成するための設定
 add_executable(PhysicsLab ${SOURCES})
 
+# includeするフォルダーを指定
+target_include_directories(
+    PhysicsLab
+    PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/engine
+)
+
 # 依存関係(PhysicsLab -> SDL3)をCmakeに伝える
 target_link_libraries(PhysicsLab PRIVATE SDL3::SDL3)

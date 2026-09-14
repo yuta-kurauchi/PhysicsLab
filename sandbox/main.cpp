@@ -1,6 +1,7 @@
 #include <iostream>
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
+#include "math/Vec2.hpp"
 
 // WindowSize
 const int W = 800;
@@ -58,22 +59,6 @@ int main() {
         return 1;
     };
 
-    /* Debug ScreenSize, PixelSize */
-    // // OS上での設定サイズ
-    // int windowW, windowH;
-    // SDL_GetWindowSize(window, &windowW, &windowH);
-
-    // // 実際の描画ピクセル数
-    // int pixelW, pixelH;
-    // SDL_GetWindowSizeInPixels(window, &pixelW, &pixelH);
-
-    // // 実際に描画されているサイズ
-    // int renderW, renderH;
-    // SDL_GetRenderOutputSize(renderer, &renderW, &renderH);
-
-    // std::cout << "Window : " << windowW << " X " << windowH << "\n";
-    // std::cout << "Pixels : " << pixelW << " X " << pixelH << "\n";
-    // std::cout << "Render : " << renderW << " X " << renderH << "\n";
 
     /* MainLoop */
     while (running) {

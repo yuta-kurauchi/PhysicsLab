@@ -13,9 +13,24 @@ set(SOURCES
 # 使用するC++の規格の設定(C++17)
 # 実行ファイルの設定の前に書かないと反映されない。
 set(CMAKE_CXX_STANDARD 17)
-
 # 規格を必ず守らせる。無理だったらエラーになる。
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+include(FetchContent)
+
+# 外部ライブラリ(SDL3)の取得場所の設定
+# バージョン固定(3.4.16)
+FetchContent_Declare(
+    SDL3
+    GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
+    GIT_TAG release-3.4.16
+)
+
+# 取得
+FetchContent_MakeAvailable(SDL3)
+
 # 実行ファイルを作成するための設定
 add_executable(PhysicsLab ${SOURCES})
+
+# 依存関係(PhysicsLab -> SDL3)をCmakeに伝える
+target_link_libraries(PhysicsLab PRIVATE SDL3::SDL3)

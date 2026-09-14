@@ -9,7 +9,7 @@ const int H = 600;
 // WindowMode
 const SDL_WindowFlags flags = 0; // 特に機能を持たせる必要ないので0
 
-int main() {
+int main(int argc, char* argv[]) {
     std::cout<< "PhysicsLab has started up\n";
     
     /* SDL処理 */

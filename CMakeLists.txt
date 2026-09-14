@@ -41,3 +41,21 @@ target_include_directories(
 
 # 依存関係(PhysicsLab -> SDL3)をCmakeに伝える
 target_link_libraries(PhysicsLab PRIVATE SDL3::SDL3)
+
+# Windowsでは実行時にSDL3.dllが必要なので、
+# ビルド後にPhysicsLab.exeと同じフォルダへコピーする
+if(WIN32)
+    add_custom_command(
+        TARGET PhysicsLab POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+            "$<TARGET_FILE:SDL3::SDL3-shared>"
+            "$<TARGET_FILE_DIR:PhysicsLab>"
+        VERBATIM
+    )
+endif()
+
+
+# ソースをUTF-8に統一
+if (MSVC) 
+    target_compile_options(PhysicsLab PRIVATE /utf-8)
+endif()

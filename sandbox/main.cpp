@@ -2,6 +2,7 @@
 #include <vector>
 #include <cmath>
 #include <optional>
+#include <random>
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 #include "math/Vec2.hpp"
@@ -318,22 +319,47 @@ void applyImpulse(Body& a, Body& b, Vec2 Impulse) {
 
 /* Initialize Obj */
 void InitializeObj() {
-    int i = 1;
+    std::mt19937 gen(std::random_device{}());
+
+    const float minRadius = 10.0f;
+    const float maxRadius = 50.0f;
+    const float minLength = 10.0f;
+    const float maxLength = 50.0f;
+    const float minMass = 0.5f;
+    const float maxMass = 3.0f;
+
+    // 分布の作成
+    std::uniform_real_distribution<float> posX(50.0f, W - 50.0f);
+    std::uniform_real_distribution<float> posY(50.0f, H / 2.0f);
+    std::uniform_real_distribution<float> velocity(-100.0f, 100.0f);
+    std::uniform_real_distribution<float> length(minLength, maxLength);
+    std::uniform_real_distribution<float> radius(minRadius, maxRadius);
+
+    
+
     for (Circle& circle : circles) {
-        // とりあえず均等に配置
-        circle.body.pos = Vec2(W * i / (circles.size() + 1), 50.0f);
-        circle.radius = 30.0f; // とりま固定値
-        circle.body.vel.x = 50.0f;
-        circle.body.mass = 1.0f;
+        circle.radius = radius(gen);
+        // 面積に比例
+        circle.body.mass = minMass + (maxMass - minMass) * ((circle.radius * circle.radius) / (maxRadius * maxRadius));
         circle.body.invMass = 1.0f / circle.body.mass;
-        i++;
+
+        circle.body.pos = Vec2(posX(gen), posY(gen));
+
+        circle.body.vel = Vec2(velocity(gen), velocity(gen));
+        
     }
-    i = 1;
     for (Polygon& rectangle : rectangles) {
-        rectangle.w = 50.0f;
-        rectangle.h = 30.0f;
-        rectangle.body.pos = Vec2(W * i / (rectangles.size() + 1), 0.0f);
-        i++;
+        rectangle.w = length(gen);
+        rectangle.h = length(gen);
+        // 面積に比例
+        rectangle.body.mass = minMass + (maxMass - minMass) * ((rectangle.w * rectangle.h) / (maxLength * maxLength));
+        rectangle.body.invMass = 1.0f / rectangle.body.mass;
+
+        rectangle.body.pos = Vec2(posX(gen), posY(gen));
+
+        rectangle.body.vel = Vec2(velocity(gen), velocity(gen));
+
+        rectangle.vertexNum = 4;
     }
 }
 

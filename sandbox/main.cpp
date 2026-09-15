@@ -282,7 +282,7 @@ std::optional<CollisionInfo> detectCircleCircleCollision(const Circle& a, const 
         Vec2 normalAB = subAB.normalize();
         Vec2 pointA = a.body.pos + normalAB * a.radius;
         Vec2 pointB = b.body.pos - normalAB * b.radius;
-        Vec2 contactPoint = pointA + pointB * 0.5f;
+        Vec2 contactPoint = (pointA + pointB) * 0.5f;
         return CollisionInfo{penetration, normalAB, contactPoint};
     } else {
         return std::nullopt;

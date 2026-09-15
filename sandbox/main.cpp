@@ -13,6 +13,10 @@ struct Body {
     Vec2 pos;
     Vec2 vel;
     Vec2 acc;
+    float mass;
+    float getInvMass() {
+        return 1 / mass;
+    }
 };
 
 struct Circle {

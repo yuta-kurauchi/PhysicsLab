@@ -1,6 +1,7 @@
 #include <iostream>
 #include <vector>
 #include <cmath>
+#include <optional>
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 #include "math/Vec2.hpp"
@@ -14,9 +15,7 @@ struct Body {
     Vec2 vel;
     Vec2 acc;
     float mass;
-    float getInvMass() {
-        return 1 / mass;
-    }
+    float invMass;
 };
 
 struct Circle {
@@ -40,7 +39,7 @@ struct CollisionInfo {
 
 
 /* Obj用 */
-int circleNum = 3;
+int circleNum = 2;
 std::vector<Circle> circles(circleNum);
 int rectangleNum = 0;
 std::vector<Polygon> rectangles(rectangleNum);
@@ -57,6 +56,10 @@ void updatePos(Body& body, float dt);
 
 /* Collision */
 void circleWallCollision(Circle& cirlce);
+void circleCircleCollision();
+std::optional<CollisionInfo> detectCircleCircleCollision(const Circle& a, const Circle&b);
+void resolveCollision(Body& a, Body& b, const CollisionInfo& collision);
+void applyImpulse(Body& a, Body& b, Vec2 Impulse);
 
 /* Initialize Obj */
 void InitializeObj();
@@ -66,9 +69,13 @@ void render(SDL_Renderer* renderer);
 void drawCircle(SDL_Renderer* renderer, const Circle& circle);
 void drawRectangle(SDL_Renderer* renderer, const Polygon& rectangle);
 
+/* Utility Func */
+float dot(const Vec2& a, const Vec2& b);
+
 /* 定数 */
 const float GRAVITY = 98.0f;
 const float WALLRESTITUTION = 0.75f;
+const float OBJRESTITUTION = 0.75f;
 
 // WindowSize
 const float W = 800;
@@ -199,6 +206,9 @@ void updatePhysics(float dt) {
     for (Circle& circle : circles) {
         circleWallCollision(circle);
     }
+
+    /* ObjCollision */
+    circleCircleCollision();
 };
 
 
@@ -216,7 +226,8 @@ void updatePos(Body& body, float dt) {
 }
 
 
-/* 壁との衝突処理 */
+/* Collision */
+
 void circleWallCollision(Circle& circle) {
     Body& body = circle.body;
     // LeftWall
@@ -242,7 +253,66 @@ void circleWallCollision(Circle& circle) {
     }
 }
 
+void circleCircleCollision() {
+    for (int i = 0; i < circles.size(); ++i) {
+        for (int j = i + 1; j < circles.size(); ++j) {
+            Circle& a = circles[i];
+            Circle& b = circles[j];
 
+            // detect
+            const auto collision = detectCircleCircleCollision(a, b);
+            // 衝突なし
+            if (!collision) continue;
+
+            resolveCollision(a.body, b.body, *collision);
+        }
+    }
+}
+
+std::optional<CollisionInfo> detectCircleCircleCollision(const Circle& a, const Circle&b) {
+    Vec2 subAB = b.body.pos - a.body.pos;
+    float centerDistance = subAB.length();
+    if (centerDistance < 1e-3f) return std::nullopt; // 中心が一致(一旦これでok)
+    float radiusSum = a.radius + b.radius;
+
+    // 衝突(めり込みのみ,接触は後に実装)
+    if (centerDistance < radiusSum) {
+        float penetration = radiusSum - centerDistance;
+        Vec2 normalAB = subAB.normalize();
+        Vec2 pointA = a.body.pos + normalAB * a.radius;
+        Vec2 pointB = b.body.pos - normalAB * b.radius;
+        Vec2 contactPoint = pointA + pointB * 0.5f;
+        return CollisionInfo{penetration, normalAB, contactPoint};
+    } else {
+        return std::nullopt;
+    }
+}
+
+void resolveCollision(Body& a, Body& b, const CollisionInfo& collision) {
+    Vec2 relativeVel = b.vel - a.vel; // とりあえず並進速度のみ
+    float vn = dot(relativeVel, collision.normalAB);
+
+    // 近づいている場合は力積作用
+    if (vn < 0) {
+        float effectiveMassNormal = a.invMass + b.invMass;
+        float normalImpulseScalar = -(1 + OBJRESTITUTION) * vn / effectiveMassNormal;
+        Vec2 Jn = collision.normalAB * normalImpulseScalar;
+        applyImpulse(a, b, Jn);
+    }
+
+
+    // めり込み補正(質量の逆比で移動)
+    float invMassSum = a.invMass + b.invMass;
+    a.pos -= collision.normalAB * collision.penetration * a.invMass / invMassSum;
+    b.pos += collision.normalAB * collision.penetration * b.invMass / invMassSum;
+}
+
+void applyImpulse(Body& a, Body& b, Vec2 Impulse) {
+    // AB方向の法線で考えているので、
+    // Aには -Impulse , Bには Impulse
+    a.vel -= Impulse * a.invMass;
+    b.vel += Impulse * b.invMass;
+}
 
 
 
@@ -253,6 +323,9 @@ void InitializeObj() {
         // とりあえず均等に配置
         circle.body.pos = Vec2(W * i / (circles.size() + 1), 50.0f);
         circle.radius = 30.0f; // とりま固定値
+        circle.body.vel.x = 50.0f;
+        circle.body.mass = 1.0f;
+        circle.body.invMass = 1.0f / circle.body.mass;
         i++;
     }
     i = 1;
@@ -319,4 +392,10 @@ void drawRectangle(SDL_Renderer* renderer,const Polygon& rectangle) {
     Vec2 renderPos = rectangle.body.pos - Vec2(rectangle.w / 2.0f, rectangle.h / 2.0f); 
     SDL_FRect rect{renderPos.x, renderPos.y, rectangle.w, rectangle.h};
     SDL_RenderFillRect(renderer, &rect);
+}
+
+
+/* Utility Function */
+float dot(const Vec2& a, const Vec2& b) {
+    return a.x * b.x + a.y * b.y;
 }

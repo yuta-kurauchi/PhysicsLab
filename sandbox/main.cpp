@@ -31,6 +31,13 @@ struct Polygon {
     int vertexNum;  
 };
 
+/* CollisionInfo */
+struct CollisionInfo {
+    float penetration;
+    Vec2 normalAB; // 衝突法線: 物理処理の都合から、ABに統一して管理
+    Vec2 contactPoint; // 接触点のワールド座標(いずれベクトルに変更,とりま1点のみ保持)
+};
+
 
 /* Obj用 */
 int circleNum = 3;

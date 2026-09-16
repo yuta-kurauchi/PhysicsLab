@@ -68,6 +68,6 @@ struct Vec2 {
 
     // 時計回りに90度回転
     Vec2 perpendicular() const {
-        return Vec2(y, -x);
+        return Vec2(-y, x);
     }
 };

@@ -41,7 +41,7 @@ struct CollisionInfo {
 
 
 /* Obj用 */
-int circleNum = 0;
+int circleNum = 1;
 std::vector<Circle> circles(circleNum);
 int rectangleNum = 1;
 std::vector<Polygon> rectangles(rectangleNum);
@@ -239,24 +239,27 @@ void circleWallCollision(Circle& circle) {
     Body& body = circle.body;
     // LeftWall
     if (body.pos.x - circle.radius < 0.0f) {
-        // めり込み解消
-        body.pos.x = circle.radius;
-        body.vel.x *= -WALLRESTITUTION; // とりま反転のみ
+        Vec2 normal(1.0f, 0.0f);
+        float penetration = -(body.pos.x - circle.radius);
+        resolveWallCollision(body, normal, penetration);
     }
     // RightWall
     if (body.pos.x + circle.radius > W) {
-        body.pos.x = W - circle.radius;
-        body.vel.x *= -WALLRESTITUTION;
+        Vec2 normal(-1.0f, 0.0f);
+        float penetration = body.pos.x + circle.radius - W;
+        resolveWallCollision(body, normal, penetration);
     }
     // TopWall
     if (body.pos.y - circle.radius < 0.0f) {
-        body.pos.y = circle.radius;
-        body.vel.y *= -WALLRESTITUTION;
+        Vec2 normal(0.0f, 1.0f);
+        float penetration = -(body.pos.y - circle.radius);
+        resolveWallCollision(body, normal, penetration);
     }
     // BottomWall
     if (body.pos.y + circle.radius > H) {
-        body.pos.y = H - circle.radius;
-        body.vel.y *= -WALLRESTITUTION;
+        Vec2 normal(0.0f, -1.0f);
+        float penetration = body.pos.y + circle.radius - H;
+        resolveWallCollision(body, normal, penetration);
     }
 }
 

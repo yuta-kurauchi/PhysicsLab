@@ -12,7 +12,7 @@
 /* Obj用の構造体 */
 
 struct Body {
-    Vec2 pos;
+    Vec2 pos; // 重心を示す
     Vec2 vel;
     Vec2 acc;
     float mass;
@@ -28,7 +28,7 @@ struct Polygon {
     Body body;
     float w;
     float h;
-    int vertexNum;  
+    std::vector<Vec2> localVertices;
 };
 
 /* CollisionInfo */
@@ -40,9 +40,9 @@ struct CollisionInfo {
 
 
 /* Obj用 */
-int circleNum = 2;
+int circleNum = 0;
 std::vector<Circle> circles(circleNum);
-int rectangleNum = 0;
+int rectangleNum = 1;
 std::vector<Polygon> rectangles(rectangleNum);
 
 /* プロトタイプ宣言 */
@@ -72,6 +72,7 @@ void drawRectangle(SDL_Renderer* renderer, const Polygon& rectangle);
 
 /* Utility Func */
 float dot(const Vec2& a, const Vec2& b);
+std::vector<Vec2> getVerticesPos(const Polygon& polygon);
 
 /* 定数 */
 const float GRAVITY = 98.0f;
@@ -323,8 +324,8 @@ void InitializeObj() {
 
     const float minRadius = 10.0f;
     const float maxRadius = 50.0f;
-    const float minLength = 10.0f;
-    const float maxLength = 50.0f;
+    const float minLength = 30.0f;
+    const float maxLength = 80.0f;
     const float minMass = 0.5f;
     const float maxMass = 3.0f;
 
@@ -359,7 +360,12 @@ void InitializeObj() {
 
         rectangle.body.vel = Vec2(velocity(gen), velocity(gen));
 
-        rectangle.vertexNum = 4;
+        // 頂点(反時計回り)
+        rectangle.localVertices.resize(4);
+        rectangle.localVertices[0] = Vec2(-rectangle.w / 2.0f, -rectangle.h / 2.0f);
+        rectangle.localVertices[1] = Vec2(-rectangle.w / 2.0f, rectangle.h / 2.0f);
+        rectangle.localVertices[2] = Vec2(rectangle.w / 2.0f, rectangle.h / 2.0f);
+        rectangle.localVertices[3] = Vec2(rectangle.w / 2.0f, -rectangle.h / 2.0f);
     }
 }
 
@@ -422,6 +428,19 @@ void drawRectangle(SDL_Renderer* renderer,const Polygon& rectangle) {
 
 
 /* Utility Function */
+
 float dot(const Vec2& a, const Vec2& b) {
     return a.x * b.x + a.y * b.y;
+}
+
+std::vector<Vec2> getVerticesPos(const Polygon& polygon) {
+    std::vector<Vec2> worldVertices;
+    for (const Vec2& localvertex : polygon.localVertices) {
+        // 現状回転なしなので、重心に足すだけ。
+        worldVertices.push_back(Vec2(
+            polygon.body.pos.x + localvertex.x, 
+            polygon.body.pos.y + localvertex.y
+        ));
+    }
+    return worldVertices;
 }

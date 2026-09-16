@@ -3,6 +3,7 @@
 #include <cmath>
 #include <optional>
 #include <random>
+#include <limits>
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 #include "math/Vec2.hpp"
@@ -57,6 +58,8 @@ void updatePos(Body& body, float dt);
 
 /* Collision */
 void circleWallCollision(Circle& cirlce);
+void polygonWallCollision(std::vector<Polygon>& polygons);
+void resolveWallCollision(Body& body, const Vec2& normal, const float penetration);
 void circleCircleCollision();
 std::optional<CollisionInfo> detectCircleCircleCollision(const Circle& a, const Circle&b);
 void resolveCollision(Body& a, Body& b, const CollisionInfo& collision);
@@ -78,6 +81,7 @@ std::vector<Vec2> getVerticesPos(const Polygon& polygon);
 const float GRAVITY = 98.0f;
 const float WALLRESTITUTION = 0.75f;
 const float OBJRESTITUTION = 0.75f;
+const float INF = std::numeric_limits<float>::infinity();
 
 // WindowSize
 const float W = 800;
@@ -208,6 +212,7 @@ void updatePhysics(float dt) {
     for (Circle& circle : circles) {
         circleWallCollision(circle);
     }
+    polygonWallCollision(rectangles);
 
     /* ObjCollision */
     circleCircleCollision();
@@ -253,6 +258,76 @@ void circleWallCollision(Circle& circle) {
         body.pos.y = H - circle.radius;
         body.vel.y *= -WALLRESTITUTION;
     }
+}
+
+void polygonWallCollision(std::vector<Polygon>& polygons) {
+    for (Polygon& polygon : polygons) {
+        Body& body = polygon.body;
+        std::vector<Vec2> vertices = getVerticesPos(polygon);
+
+        // 一番壁に近い頂点の座標を取得
+        // 2点接触は考慮していない(後で実装)
+        float left = INF;
+        float right = -INF;
+        float top = INF;
+        float bottom = -INF;
+        for (Vec2& vertex : vertices) {
+            if (vertex.x < left) {
+                left = vertex.x;
+            }
+            if (vertex.x > right) {
+                right = vertex.x;
+            }
+            if (vertex.y < top) {
+                top = vertex.y;
+            }
+            if (vertex.y > bottom) {
+                bottom = vertex.y;
+            }
+        }
+
+        if (left < 0.0f) {
+            // 後でcollisioninfo使う形にする。
+            // 壁をobjとして扱うようにするときにやる。
+            Vec2 normal(1.0f, 0.0f);
+            float penetration = -left;
+            resolveWallCollision(body, normal, penetration);
+        }
+        if (right > W) {
+            Vec2 normal(-1.0f, 0.0f);
+            float penetration = right - W;
+            resolveWallCollision(body, normal, penetration);
+        }
+        if (top < 0.0f) {
+            Vec2 normal(0.0f, 1.0f);
+            float penetration = -top;
+            resolveWallCollision(body, normal, penetration);
+        }
+        if (bottom > H) {
+            Vec2 normal(0.0f, -1.0f);
+            float penetration = bottom - H;
+            resolveWallCollision(body, normal, penetration);
+        }
+    }
+}
+
+// normalは壁のほう線を使っているので、物体はBだと考える
+void resolveWallCollision(Body& body, const Vec2& normal, const float penetration) {
+    // とりあえず並進速度のみ
+    float vn = dot(body.vel, normal);
+
+    // 近づいている場合は力積作用
+    if (vn < 0) {
+        // Jn = -m v_x (1 + e), 壁を質量無限のobjにすれば物体同士と同じようにできる。
+        float normalImpulseScalar = -(1 + WALLRESTITUTION) * vn * body.mass;
+        Vec2 Jn = normal * normalImpulseScalar;
+        // applyImpulse, 物体はBと考えられるので、+Jn
+        body.vel += Jn / body.mass;
+    }
+
+
+    // めり込み補正
+    body.pos += normal * penetration;
 }
 
 void circleCircleCollision() {

@@ -76,10 +76,10 @@ void circleCircleCollision();
 std::optional<CollisionInfo> detectCircleCircleCollision(const Circle& a, const Circle&b);
 void polygonPolygonCollision(std::vector<Polygon>& polygons);
 std::optional<SATCollisionInfo> detectPolygonPolygonCollision(const Polygon& a, const Polygon& b);
-std::vector<Vec2> getCandidateAxesForSAT(std::vector<Vec2> vertices);
+std::vector<Vec2> getCandidateAxesForSAT(std::vector<Vec2>& vertices);
 Interval getProjectedIntervalOnAxis(const std::vector<Vec2>& vertices, const Vec2& axis);
 void resolveCollision(Body& a, Body& b, const CollisionInfo& collision);
-void applyImpulse(Body& a, Body& b, Vec2 Impulse);
+void applyImpulse(Body& a, Body& b, Vec2& Impulse);
 
 /* Initialize Obj */
 void InitializeObj();
@@ -395,12 +395,7 @@ void polygonPolygonCollision(std::vector<Polygon>& polygons) {
             // detect, sat -> get normal and penetration
             const auto satCollision = detectPolygonPolygonCollision(a, b);
             // 衝突なし
-            if (!satCollision) {
-                std::cout << "なし\n";
-                continue;
-            }
-
-            std::cout << "衝突\n";
+            if (!satCollision) continue;
 
             // contactPoint取得(現状は並進のみなので、回転を実装する際に実装)
 
@@ -451,7 +446,7 @@ std::optional<SATCollisionInfo> detectPolygonPolygonCollision(const Polygon& a, 
 
 
 // 後で、どちらの物体で、どの辺なのかを持てるようにする
-std::vector<Vec2> getCandidateAxesForSAT(std::vector<Vec2> vertices) {
+std::vector<Vec2> getCandidateAxesForSAT(std::vector<Vec2>& vertices) {
     std::vector<Vec2> axes;
     for (int i = 0; i < vertices.size(); ++i) {
         Vec2 p1 = vertices[i];
@@ -500,7 +495,7 @@ void resolveCollision(Body& a, Body& b, const CollisionInfo& collision) {
     b.pos += collision.normalAB * collision.penetration * b.invMass / invMassSum;
 }
 
-void applyImpulse(Body& a, Body& b, Vec2 Impulse) {
+void applyImpulse(Body& a, Body& b, Vec2& Impulse) {
     // AB方向の法線で考えているので、
     // Aには -Impulse , Bには Impulse
     a.vel -= Impulse * a.invMass;

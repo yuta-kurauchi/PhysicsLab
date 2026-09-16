@@ -65,4 +65,9 @@ struct Vec2 {
         if (len == 0.0f) return Vec2(0.0f, 0.0f);
         return Vec2{x / len, y / len};
     }
+
+    // 時計回りに90度回転
+    Vec2 perpendicular() const {
+        return Vec2(y, -x);
+    }
 };

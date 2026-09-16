@@ -4,6 +4,7 @@
 #include <optional>
 #include <random>
 #include <limits>
+#include <algorithm>
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 #include "math/Vec2.hpp"
@@ -39,11 +40,22 @@ struct CollisionInfo {
     Vec2 contactPoint; // 接触点のワールド座標(いずれベクトルに変更,とりま1点のみ保持)
 };
 
+struct SATCollisionInfo {
+    float penetration;
+    Vec2 normalAB;
+};
+
+
+struct Interval {
+    float min;
+    float max;
+    Interval(float min, float max) : min(min), max(max) {};
+};
 
 /* Obj用 */
-int circleNum = 1;
+int circleNum = 0;
 std::vector<Circle> circles(circleNum);
-int rectangleNum = 1;
+int rectangleNum = 2;
 std::vector<Polygon> rectangles(rectangleNum);
 
 /* プロトタイプ宣言 */
@@ -62,6 +74,10 @@ void polygonWallCollision(std::vector<Polygon>& polygons);
 void resolveWallCollision(Body& body, const Vec2& normal, const float penetration);
 void circleCircleCollision();
 std::optional<CollisionInfo> detectCircleCircleCollision(const Circle& a, const Circle&b);
+void polygonPolygonCollision(std::vector<Polygon>& polygons);
+std::optional<SATCollisionInfo> detectPolygonPolygonCollision(const Polygon& a, const Polygon& b);
+std::vector<Vec2> getCandidateAxesForSAT(std::vector<Vec2> vertices);
+Interval getProjectedIntervalOnAxis(const std::vector<Vec2>& vertices, const Vec2& axis);
 void resolveCollision(Body& a, Body& b, const CollisionInfo& collision);
 void applyImpulse(Body& a, Body& b, Vec2 Impulse);
 
@@ -216,6 +232,7 @@ void updatePhysics(float dt) {
 
     /* ObjCollision */
     circleCircleCollision();
+    polygonPolygonCollision(rectangles);
 };
 
 
@@ -367,6 +384,102 @@ std::optional<CollisionInfo> detectCircleCircleCollision(const Circle& a, const 
         return std::nullopt;
     }
 }
+
+
+void polygonPolygonCollision(std::vector<Polygon>& polygons) {
+    for (int i = 0; i < polygons.size(); ++i) {
+        for (int j = i + 1; j < polygons.size(); ++j) {
+            Polygon& a = polygons[i];
+            Polygon& b = polygons[j];
+
+            // detect, sat -> get normal and penetration
+            const auto satCollision = detectPolygonPolygonCollision(a, b);
+            // 衝突なし
+            if (!satCollision) {
+                std::cout << "なし\n";
+                continue;
+            }
+
+            std::cout << "衝突\n";
+
+            // contactPoint取得(現状は並進のみなので、回転を実装する際に実装)
+
+            // resolve
+            // contactPointは仮で(0.0f,0.0f)にしている
+            CollisionInfo collision{(*satCollision).penetration, (*satCollision).normalAB, Vec2()};
+            resolveCollision(a.body, b.body, collision);
+        }
+    }
+}
+
+
+/* SAT */
+std::optional<SATCollisionInfo> detectPolygonPolygonCollision(const Polygon& a, const Polygon& b) {
+    float minPenetration = INF;
+    Vec2 normalAB;
+
+    std::vector<Vec2> verticesA = getVerticesPos(a);
+    std::vector<Vec2> verticesB = getVerticesPos(b);
+
+    std::vector<Vec2> axesA = getCandidateAxesForSAT(verticesA);
+    std::vector<Vec2> axesB = getCandidateAxesForSAT(verticesB);
+    std::vector<Vec2> axes = axesA;
+    axes.insert(axes.end(), axesB.begin(), axesB.end());
+
+    for (const Vec2& axis : axes) {
+        Interval projectA = getProjectedIntervalOnAxis(verticesA, axis);
+        Interval projectB = getProjectedIntervalOnAxis(verticesB, axis);
+
+        // A固定でBを動かすと考えた時のAを抜け出すための方向ごとの移動量,
+        // +: +Axis方向にBを, -: -Axis方向にBを
+        float moveBPositive = projectA.max - projectB.min;
+        float moveBNegative = projectB.max - projectA.min;
+        float minMoveB = std::min(moveBPositive, moveBNegative);
+
+        // 分離軸が存在 -> 衝突なし
+        if (minMoveB < 0) return std::nullopt;
+
+        // 一番小さい移動でめり込みを解消できる方向を保存
+        if (minMoveB < minPenetration) {
+            minPenetration = minMoveB;
+            // Bを動かす場合を考えているので、動かす方向がnormalAB
+            normalAB = (minMoveB == moveBPositive) ? axis : axis * -1;
+        }
+    }
+    return SATCollisionInfo{minPenetration, normalAB};
+}
+
+
+// 後で、どちらの物体で、どの辺なのかを持てるようにする
+std::vector<Vec2> getCandidateAxesForSAT(std::vector<Vec2> vertices) {
+    std::vector<Vec2> axes;
+    for (int i = 0; i < vertices.size(); ++i) {
+        Vec2 p1 = vertices[i];
+        int next = (i + 1) % vertices.size();
+        Vec2 p2 = vertices[next];
+        Vec2 edge = p2 - p1;
+        // 頂点が反時計回りなので、外向き
+        Vec2 axis = edge.normalize().perpendicular();
+        axes.push_back(axis);
+    }
+    return axes;
+}
+
+
+Interval getProjectedIntervalOnAxis(const std::vector<Vec2>& vertices, const Vec2& axis) {
+    Interval interval(INF, -INF);
+    for (const Vec2 vertex : vertices) {
+        float project = dot(vertex, axis);
+        if (project < interval.min) {
+            interval.min = project;
+        }
+        if (project > interval.max) {
+            interval.max = project;
+        }
+    }
+    return interval;
+}
+
 
 void resolveCollision(Body& a, Body& b, const CollisionInfo& collision) {
     Vec2 relativeVel = b.vel - a.vel; // とりあえず並進速度のみ

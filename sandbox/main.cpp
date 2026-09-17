@@ -53,9 +53,9 @@ struct Interval {
 };
 
 /* Obj用 */
-int circleNum = 0;
+int circleNum = 1;
 std::vector<Circle> circles(circleNum);
-int rectangleNum = 2;
+int rectangleNum = 1;
 std::vector<Polygon> rectangles(rectangleNum);
 
 /* プロトタイプ宣言 */
@@ -75,9 +75,13 @@ void resolveWallCollision(Body& body, const Vec2& normal, const float penetratio
 void circleCircleCollision();
 std::optional<CollisionInfo> detectCircleCircleCollision(const Circle& a, const Circle&b);
 void polygonPolygonCollision(std::vector<Polygon>& polygons);
+void circlePolygonCollision(std::vector<Circle>& circles, std::vector<Polygon>& polygons);
 std::optional<SATCollisionInfo> detectPolygonPolygonCollision(const Polygon& a, const Polygon& b);
+std::optional<SATCollisionInfo> detectCirclePolygonCollision(const Circle& a, const Polygon& b);
 std::vector<Vec2> getCandidateAxesForSAT(std::vector<Vec2>& vertices);
+Vec2 getCandidateAxisForSATFromCircle(const Body& circleBody, const std::vector<Vec2>& vertices);
 Interval getProjectedIntervalOnAxis(const std::vector<Vec2>& vertices, const Vec2& axis);
+Interval getProjectedIntervalOnAxisFromCircle(const Circle& circle, const Vec2& axis);
 void resolveCollision(Body& a, Body& b, const CollisionInfo& collision);
 void applyImpulse(Body& a, Body& b, Vec2& Impulse);
 
@@ -233,6 +237,7 @@ void updatePhysics(float dt) {
     /* ObjCollision */
     circleCircleCollision();
     polygonPolygonCollision(rectangles);
+    circlePolygonCollision(circles, rectangles);
 };
 
 
@@ -407,9 +412,26 @@ void polygonPolygonCollision(std::vector<Polygon>& polygons) {
     }
 }
 
+void circlePolygonCollision(std::vector<Circle>& circles, std::vector<Polygon>& polygons) {
+    for (int i = 0; i < circles.size(); ++i) {
+        for (int j = 0; j < polygons.size(); ++j) {
+            Circle& a = circles[i];
+            Polygon& b = polygons[j];
+
+            // detect(sat)
+            const auto satCollision = detectCirclePolygonCollision(a, b);
+            if (!satCollision) continue;
+
+            // resolve
+            // contactPointは仮で(0.0f,0.0f)にしている
+            CollisionInfo collision{ (*satCollision).penetration, (*satCollision).normalAB, Vec2() };
+            resolveCollision(a.body, b.body, collision);
+        }
+    }
+}
 
 /* SAT */
-std::optional<SATCollisionInfo> detectPolygonPolygonCollision(const Polygon& a, const Polygon& b) {
+std::optional<SATCollisionInfo> detectPolygonPolygonCollision(const Polygon & a, const Polygon & b) {
     float minPenetration = INF;
     Vec2 normalAB;
 
@@ -441,7 +463,42 @@ std::optional<SATCollisionInfo> detectPolygonPolygonCollision(const Polygon& a, 
             normalAB = (minMoveB == moveBPositive) ? axis : axis * -1;
         }
     }
-    return SATCollisionInfo{minPenetration, normalAB};
+    return SATCollisionInfo{ minPenetration, normalAB };
+}
+
+
+std::optional<SATCollisionInfo> detectCirclePolygonCollision(const Circle& a, const Polygon& b) {
+    float minPenetration = INF;
+    Vec2 normalAB;
+
+    std::vector<Vec2> verticesB = getVerticesPos(b);
+
+    Vec2 axisA = getCandidateAxisForSATFromCircle(a.body, verticesB);
+    std::vector<Vec2> axesB = getCandidateAxesForSAT(verticesB);
+    std::vector<Vec2> axes = { axisA };
+    axes.insert(axes.end(), axesB.begin(), axesB.end());
+
+    for (const Vec2& axis : axes) {
+        Interval projectA = getProjectedIntervalOnAxisFromCircle(a, axis);
+        Interval projectB = getProjectedIntervalOnAxis(verticesB, axis);
+
+        // A固定でBを動かすと考えた時のAを抜け出すための方向ごとの移動量,
+        // +: +Axis方向にBを, -: -Axis方向にBを
+        float moveBPositive = projectA.max - projectB.min;
+        float moveBNegative = projectB.max - projectA.min;
+        float minMoveB = std::min(moveBPositive, moveBNegative);
+
+        // 分離軸が存在 -> 衝突なし
+        if (minMoveB < 0) return std::nullopt;
+
+        // 一番小さい移動でめり込みを解消できる方向を保存
+        if (minMoveB < minPenetration) {
+            minPenetration = minMoveB;
+            // Bを動かす場合を考えているので、動かす方向がnormalAB
+            normalAB = (minMoveB == moveBPositive) ? axis : axis * -1;
+        }
+    }
+    return SATCollisionInfo{ minPenetration, normalAB };
 }
 
 
@@ -460,6 +517,22 @@ std::vector<Vec2> getCandidateAxesForSAT(std::vector<Vec2>& vertices) {
     return axes;
 }
 
+// 円に一番近い頂点から軸を生成
+Vec2 getCandidateAxisForSATFromCircle(const Body& circleBody, const std::vector<Vec2>& vertices) {
+    float minDistance = INF;
+    Vec2 axis;
+
+    for (const Vec2& vertex : vertices) {
+        Vec2 vertexToCenter = circleBody.pos - vertex;
+        float distance = vertexToCenter.length();
+        if (distance < minDistance) {
+            minDistance = distance;
+            axis = vertexToCenter;
+        }
+    }
+    return axis;
+}
+
 
 Interval getProjectedIntervalOnAxis(const std::vector<Vec2>& vertices, const Vec2& axis) {
     Interval interval(INF, -INF);
@@ -473,6 +546,11 @@ Interval getProjectedIntervalOnAxis(const std::vector<Vec2>& vertices, const Vec
         }
     }
     return interval;
+}
+
+Interval getProjectedIntervalOnAxisFromCircle(const Circle& circle, const Vec2& axis) {
+    float project = dot(circle.body.pos, axis);
+    return Interval(project - circle.radius, project + circle.radius);
 }
 
 

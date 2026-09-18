@@ -422,9 +422,12 @@ void circlePolygonCollision(std::vector<Circle>& circles, std::vector<Polygon>& 
             const auto satCollision = detectCirclePolygonCollision(a, b);
             if (!satCollision) continue;
 
+            /* CollisionInfo */
+            // 円が埋まっている場合などを考慮した接触点ではないので後に改良する
+            Vec2 contactPoint = a.body.pos + satCollision->normalAB * a.radius;
+            CollisionInfo collision{ (*satCollision).penetration, (*satCollision).normalAB, contactPoint };
+
             // resolve
-            // contactPointは仮で(0.0f,0.0f)にしている
-            CollisionInfo collision{ (*satCollision).penetration, (*satCollision).normalAB, Vec2() };
             resolveCollision(a.body, b.body, collision);
         }
     }

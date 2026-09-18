@@ -10,6 +10,12 @@
 #include "math/Vec2.hpp"
 
 
+/* 色の管理用 */
+struct RGB {
+    float r;
+    float g;
+    float b;
+};
 
 /* Obj用の構造体 */
 
@@ -29,9 +35,8 @@ struct Circle {
 
 struct Polygon {
     Body body;
-    float w;
-    float h;
     std::vector<Vec2> localVertices;
+    RGB rgb{0.0f, 0.0f, 0.0f};
 };
 
 struct AxisInfo {
@@ -79,7 +84,8 @@ std::vector<Vec2> debugPoints;
 int circleNum = 10;
 std::vector<Circle> circles(circleNum);
 int rectangleNum = 10;
-std::vector<Polygon> rectangles(rectangleNum);
+int triangleNum = 10;
+std::vector<Polygon> polygons;
 
 /* プロトタイプ宣言 */
 
@@ -128,6 +134,7 @@ std::vector<Vec2> getVerticesPos(const Polygon& polygon);
 Vec2 rotate(const Vec2& v, float angle);
 
 /* 定数 */
+const double PI = std::acos(-1.0);
 const float GRAVITY = 98.0f;
 const float WALLRESTITUTION = 0.75f;
 const float OBJRESTITUTION = 0.75f;
@@ -252,22 +259,22 @@ void updatePhysics(float dt) {
         updateVel(circle.body, dt);
         updatePos(circle.body, dt);
     }
-    for (Polygon& rectangle : rectangles) {
-        updateAcc(rectangle.body);
-        updateVel(rectangle.body, dt);
-        updatePos(rectangle.body, dt);
+    for (Polygon& polygon : polygons) {
+        updateAcc(polygon.body);
+        updateVel(polygon.body, dt);
+        updatePos(polygon.body, dt);
     }
 
     /* WallCollision */
     for (Circle& circle : circles) {
         circleWallCollision(circle);
     }
-    polygonWallCollision(rectangles);
+    polygonWallCollision(polygons);
 
     /* ObjCollision */
     circleCircleCollision();
-    polygonPolygonCollision(rectangles);
-    circlePolygonCollision(circles, rectangles);
+    polygonPolygonCollision(polygons);
+    circlePolygonCollision(circles, polygons);
 };
 
 
@@ -807,6 +814,9 @@ void applyImpulse(Body& a, Body& b, Vec2& Impulse) {
 
 /* Initialize Obj */
 void InitializeObj() {
+    polygons.clear();
+    polygons.reserve(rectangleNum + triangleNum);
+
     std::mt19937 gen(std::random_device{}());
 
     const float minRadius = 10.0f;
@@ -822,9 +832,10 @@ void InitializeObj() {
     std::uniform_real_distribution<float> velocity(-100.0f, 100.0f);
     std::uniform_real_distribution<float> length(minLength, maxLength);
     std::uniform_real_distribution<float> radius(minRadius, maxRadius);
+    std::uniform_real_distribution<float> angle(0.0f, 2.0f * PI);
 
     
-
+    // circle
     for (Circle& circle : circles) {
         circle.radius = radius(gen);
         // 面積に比例
@@ -836,11 +847,14 @@ void InitializeObj() {
         circle.body.vel = Vec2(velocity(gen), velocity(gen));
         
     }
-    for (Polygon& rectangle : rectangles) {
-        rectangle.w = length(gen);
-        rectangle.h = length(gen);
+
+    // rectangle
+    for (int i = 0; i < rectangleNum; ++i) {
+        Polygon rectangle;
+        float w = length(gen);
+        float h = length(gen);
         // 面積に比例
-        rectangle.body.mass = minMass + (maxMass - minMass) * ((rectangle.w * rectangle.h) / (maxLength * maxLength));
+        rectangle.body.mass = minMass + (maxMass - minMass) * ((w * h) / (maxLength * maxLength));
         rectangle.body.invMass = 1.0f / rectangle.body.mass;
 
         rectangle.body.pos = Vec2(posX(gen), posY(gen));
@@ -849,12 +863,44 @@ void InitializeObj() {
 
         // 頂点(反時計回り)
         rectangle.localVertices.resize(4);
-        rectangle.localVertices[0] = Vec2(-rectangle.w / 2.0f, -rectangle.h / 2.0f);
-        rectangle.localVertices[1] = Vec2(-rectangle.w / 2.0f, rectangle.h / 2.0f);
-        rectangle.localVertices[2] = Vec2(rectangle.w / 2.0f, rectangle.h / 2.0f);
-        rectangle.localVertices[3] = Vec2(rectangle.w / 2.0f, -rectangle.h / 2.0f);
+        rectangle.localVertices[0] = Vec2(-w / 2.0f, -h / 2.0f);
+        rectangle.localVertices[1] = Vec2(-w / 2.0f, h / 2.0f);
+        rectangle.localVertices[2] = Vec2(w / 2.0f, h / 2.0f);
+        rectangle.localVertices[3] = Vec2(w / 2.0f, -h / 2.0f);
 
-        rectangle.body.angle = 45.0f;
+        rectangle.body.angle = angle(gen);
+
+        // 緑
+        rectangle.rgb.g = 1.0f;
+
+        polygons.push_back(rectangle);
+    }
+
+    // triangle
+    for (int i = 0; i < triangleNum; ++i) {
+        Polygon triangle;
+        float w = length(gen);
+        float h = length(gen);
+        // 面積に比例
+        triangle.body.mass = minMass + (maxMass - minMass) * ((w * h) / (maxLength * maxLength));
+        triangle.body.invMass = 1.0f / triangle.body.mass;
+
+        triangle.body.pos = Vec2(posX(gen), posY(gen));
+
+        triangle.body.vel = Vec2(velocity(gen), velocity(gen));
+
+        // 頂点(反時計回り)
+        triangle.localVertices.resize(3);
+        triangle.localVertices[0] = Vec2(0.0f, -h * 2.0f / 3.0f);
+        triangle.localVertices[1] = Vec2(-w / 2.0f, h / 3.0f);
+        triangle.localVertices[2] = Vec2(w / 2.0f, h / 3.0f);
+
+        triangle.body.angle = angle(gen);
+
+        // 青
+        triangle.rgb.b = 1.0f;
+
+        polygons.push_back(triangle);
     }
 }
 
@@ -867,8 +913,8 @@ void render(SDL_Renderer* renderer) {
 
     // ObjDraw
     // rect(x, y)はrectの左上の頂点座標
-    for (Polygon& rectangle : rectangles) {
-        drawPolygon(renderer, rectangle);
+    for (Polygon& polygon : polygons) {
+        drawPolygon(renderer, polygon);
     }
     for (Circle& circle : circles) {
         drawCircle(renderer, circle);
@@ -906,7 +952,6 @@ void render(SDL_Renderer* renderer) {
 void drawCircle(SDL_Renderer* renderer, const Circle& circle) {
     SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255); // 赤
     const int SEGMENTS = 64;
-    const double PI = std::acos(-1.0);
 
     SDL_FPoint points[SEGMENTS + 1];
 
@@ -928,7 +973,7 @@ void drawCircle(SDL_Renderer* renderer, const Circle& circle) {
 
     // fill
     // SEGMENTS = points.size() - 1
-    for (int i = 0; i < SEGMENTS; ++i) {
+    for (int i = 1; i < SEGMENTS; ++i) {
         int p1 = 0;
         int p2 = i;
         int p3 = i + 1;
@@ -939,7 +984,7 @@ void drawCircle(SDL_Renderer* renderer, const Circle& circle) {
         vert[1].position.y = points[p2].y;
         vert[2].position.x = points[p3].x;
         vert[2].position.y = points[p3].y;
-        // 色はすべて白
+        // 赤
         for (int j = 0; j < 3; ++j) {
             vert[j].color.r = 1.0;
             vert[j].color.g = 0.0;
@@ -952,7 +997,8 @@ void drawCircle(SDL_Renderer* renderer, const Circle& circle) {
 
 // polygonの描画
 void drawPolygon(SDL_Renderer* renderer,const Polygon& polygon) {
-    SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255); // 白
+    // 辺の色
+    SDL_SetRenderDrawColor(renderer, polygon.rgb.r * 255, polygon.rgb.g * 255, polygon.rgb.b * 255, 255);
 
     std::vector<Vec2> worldVertices = getVerticesPos(polygon);
 
@@ -967,7 +1013,7 @@ void drawPolygon(SDL_Renderer* renderer,const Polygon& polygon) {
     SDL_RenderLines(renderer, points.data(), points.size());
 
     // fill
-    for (int i = 0; i < worldVertices.size() - 1; ++i) {
+    for (int i = 1; i < worldVertices.size() - 1; ++i) {
         int p1 = 0;
         int p2 = i;
         int p3 = i + 1;
@@ -978,11 +1024,11 @@ void drawPolygon(SDL_Renderer* renderer,const Polygon& polygon) {
         vert[1].position.y = worldVertices[p2].y;
         vert[2].position.x = worldVertices[p3].x;
         vert[2].position.y = worldVertices[p3].y;
-        // 色はすべて赤
+        // tri : 青, rec: 緑
         for (int j = 0; j < 3; ++j) {
-            vert[j].color.r = 1.0;
-            vert[j].color.g = 1.0;
-            vert[j].color.b = 1.0;
+            vert[j].color.r = polygon.rgb.r;
+            vert[j].color.g = polygon.rgb.g;
+            vert[j].color.b = polygon.rgb.b;
             vert[j].color.a = 1.0;
         }
         SDL_RenderGeometry(renderer, NULL, vert, 3, NULL, 0);

@@ -19,6 +19,7 @@ struct Body {
     Vec2 acc;
     float mass;
     float invMass;
+    float angle; // 時計回りが正
 };
 
 struct Circle {
@@ -75,9 +76,9 @@ std::vector<DebugLine> debugLines;
 std::vector<Vec2> debugPoints;
 
 /* Obj用 */
-int circleNum = 4;
+int circleNum = 10;
 std::vector<Circle> circles(circleNum);
-int rectangleNum = 4;
+int rectangleNum = 10;
 std::vector<Polygon> rectangles(rectangleNum);
 
 /* プロトタイプ宣言 */
@@ -119,11 +120,12 @@ void InitializeObj();
 /* Render */
 void render(SDL_Renderer* renderer);
 void drawCircle(SDL_Renderer* renderer, const Circle& circle);
-void drawRectangle(SDL_Renderer* renderer, const Polygon& rectangle);
+void drawPolygon(SDL_Renderer* renderer, const Polygon& polygon);
 
 /* Utility Func */
 float dot(const Vec2& a, const Vec2& b);
 std::vector<Vec2> getVerticesPos(const Polygon& polygon);
+Vec2 rotate(const Vec2& v, float angle);
 
 /* 定数 */
 const float GRAVITY = 98.0f;
@@ -851,6 +853,8 @@ void InitializeObj() {
         rectangle.localVertices[1] = Vec2(-rectangle.w / 2.0f, rectangle.h / 2.0f);
         rectangle.localVertices[2] = Vec2(rectangle.w / 2.0f, rectangle.h / 2.0f);
         rectangle.localVertices[3] = Vec2(rectangle.w / 2.0f, -rectangle.h / 2.0f);
+
+        rectangle.body.angle = 45.0f;
     }
 }
 
@@ -864,7 +868,7 @@ void render(SDL_Renderer* renderer) {
     // ObjDraw
     // rect(x, y)はrectの左上の頂点座標
     for (Polygon& rectangle : rectangles) {
-        drawRectangle(renderer, rectangle);
+        drawPolygon(renderer, rectangle);
     }
     for (Circle& circle : circles) {
         drawCircle(renderer, circle);
@@ -921,15 +925,68 @@ void drawCircle(SDL_Renderer* renderer, const Circle& circle) {
 
     // renderer更新
     SDL_RenderLines(renderer, points, SEGMENTS + 1);
+
+    // fill
+    // SEGMENTS = points.size() - 1
+    for (int i = 0; i < SEGMENTS; ++i) {
+        int p1 = 0;
+        int p2 = i;
+        int p3 = i + 1;
+        SDL_Vertex vert[3];
+        vert[0].position.x = points[p1].x;
+        vert[0].position.y = points[p1].y;
+        vert[1].position.x = points[p2].x;
+        vert[1].position.y = points[p2].y;
+        vert[2].position.x = points[p3].x;
+        vert[2].position.y = points[p3].y;
+        // 色はすべて白
+        for (int j = 0; j < 3; ++j) {
+            vert[j].color.r = 1.0;
+            vert[j].color.g = 0.0;
+            vert[j].color.b = 0.0;
+            vert[j].color.a = 1.0;
+        }
+        SDL_RenderGeometry(renderer, NULL, vert, 3, NULL, 0);
+    }
 }
 
-// 長方形の描画
-void drawRectangle(SDL_Renderer* renderer,const Polygon& rectangle) {
+// polygonの描画
+void drawPolygon(SDL_Renderer* renderer,const Polygon& polygon) {
     SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255); // 白
-    // 重心から左上の頂点座標をレンダー用の座標として作成
-    Vec2 renderPos = rectangle.body.pos - Vec2(rectangle.w / 2.0f, rectangle.h / 2.0f); 
-    SDL_FRect rect{renderPos.x, renderPos.y, rectangle.w, rectangle.h};
-    SDL_RenderFillRect(renderer, &rect);
+
+    std::vector<Vec2> worldVertices = getVerticesPos(polygon);
+
+    std::vector<SDL_FPoint> points;
+    for (const Vec2& vertex : worldVertices) {
+        points.push_back({ vertex.x, vertex.y });
+    }
+
+    // 閉じる
+    points.push_back(points.front());
+
+    SDL_RenderLines(renderer, points.data(), points.size());
+
+    // fill
+    for (int i = 0; i < worldVertices.size() - 1; ++i) {
+        int p1 = 0;
+        int p2 = i;
+        int p3 = i + 1;
+        SDL_Vertex vert[3];
+        vert[0].position.x = worldVertices[p1].x;
+        vert[0].position.y = worldVertices[p1].y;
+        vert[1].position.x = worldVertices[p2].x;
+        vert[1].position.y = worldVertices[p2].y;
+        vert[2].position.x = worldVertices[p3].x;
+        vert[2].position.y = worldVertices[p3].y;
+        // 色はすべて赤
+        for (int j = 0; j < 3; ++j) {
+            vert[j].color.r = 1.0;
+            vert[j].color.g = 1.0;
+            vert[j].color.b = 1.0;
+            vert[j].color.a = 1.0;
+        }
+        SDL_RenderGeometry(renderer, NULL, vert, 3, NULL, 0);
+    }
 }
 
 
@@ -941,12 +998,20 @@ float dot(const Vec2& a, const Vec2& b) {
 
 std::vector<Vec2> getVerticesPos(const Polygon& polygon) {
     std::vector<Vec2> worldVertices;
-    for (const Vec2& localvertex : polygon.localVertices) {
-        // 現状回転なしなので、重心に足すだけ。
-        worldVertices.push_back(Vec2(
-            polygon.body.pos.x + localvertex.x, 
-            polygon.body.pos.y + localvertex.y
-        ));
+    for (const Vec2& localVertex : polygon.localVertices) {
+        Vec2 rotated = rotate(localVertex, polygon.body.angle);
+        worldVertices.push_back(polygon.body.pos + rotated);
     }
     return worldVertices;
+}
+
+// 時計回りを正
+Vec2 rotate(const Vec2& v, float angle) {
+    float c = std::cos(angle);
+    float s = std::sin(angle);
+
+    return Vec2(
+        v.x * c - v.y * s,
+        v.x * s + v.y * c
+    );
 }

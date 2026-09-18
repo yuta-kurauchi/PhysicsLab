@@ -33,6 +33,12 @@ struct Polygon {
     std::vector<Vec2> localVertices;
 };
 
+struct AxisInfo {
+    Vec2 candidateAxis;
+    char whichObj;
+    int edgeNum;
+};
+
 /* CollisionInfo */
 struct CollisionInfo {
     float penetration;
@@ -43,14 +49,9 @@ struct CollisionInfo {
 struct SATCollisionInfo {
     float penetration;
     Vec2 normalAB;
+    AxisInfo mtvAxis;
 };
 
-
-struct AxisInfo {
-    Vec2 candidateAxis;
-    char whichObj;
-    int edgeNum;
-};
 
 struct Interval {
     float min;
@@ -58,10 +59,25 @@ struct Interval {
     Interval(float min, float max) : min(min), max(max) {};
 };
 
+struct Edge {
+    Vec2 p1;
+    Vec2 p2;
+};
+
+
+// デバッグ描画用のデータを保持するための構造体
+// いずれ色も持たせたい
+struct DebugLine {
+    Vec2 p1;
+    Vec2 p2;
+};
+std::vector<DebugLine> debugLines;
+std::vector<Vec2> debugPoints;
+
 /* Obj用 */
-int circleNum = 10;
+int circleNum = 4;
 std::vector<Circle> circles(circleNum);
-int rectangleNum = 10;
+int rectangleNum = 4;
 std::vector<Polygon> rectangles(rectangleNum);
 
 /* プロトタイプ宣言 */
@@ -84,10 +100,16 @@ void polygonPolygonCollision(std::vector<Polygon>& polygons);
 void circlePolygonCollision(std::vector<Circle>& circles, std::vector<Polygon>& polygons);
 std::optional<SATCollisionInfo> detectPolygonPolygonCollision(const Polygon& a, const Polygon& b);
 std::optional<SATCollisionInfo> detectCirclePolygonCollision(const Circle& a, const Polygon& b);
+std::optional<CollisionInfo> generateCollisionInfo(const Polygon& a, const Polygon& b, const SATCollisionInfo& satCollision);
 std::vector<AxisInfo> getCandidateAxesForSAT(std::vector<Vec2>& vertices, char whichObj);
 AxisInfo getCandidateAxisForSATFromCircle(const Body& circleBody, const std::vector<Vec2>& vertices);
 Interval getProjectedIntervalOnAxis(const std::vector<Vec2>& vertices, const Vec2& axis);
 Interval getProjectedIntervalOnAxisFromCircle(const Circle& circle, const Vec2& axis);
+AxisInfo detectReferenceAxis(const Vec2& normalRI, const std::vector<AxisInfo>& axes);
+AxisInfo detectIncidentAxis(const Vec2& normalRI, const std::vector<AxisInfo>& axes);
+Edge getEdge(const std::vector<Vec2>& vertices, int edgeNum);
+std::optional<Edge> clipSegmentToLine(Edge points, const Vec2& borderNormal, const Vec2& borderPos);
+std::optional<std::vector<Vec2>> decideContactPoint(Edge points, Vec2& borderNormal, Vec2& borderPos);
 void resolveCollision(Body& a, Body& b, const CollisionInfo& collision);
 void applyImpulse(Body& a, Body& b, Vec2& Impulse);
 
@@ -409,11 +431,12 @@ void polygonPolygonCollision(std::vector<Polygon>& polygons) {
             if (!satCollision) continue;
 
             // contactPoint取得(現状は並進のみなので、回転を実装する際に実装)
+            const auto collision = generateCollisionInfo(a, b, *satCollision);
+
+            if (!collision) continue;
 
             // resolve
-            // contactPointは仮で(0.0f,0.0f)にしている
-            CollisionInfo collision{(*satCollision).penetration, (*satCollision).normalAB, Vec2()};
-            resolveCollision(a.body, b.body, collision);
+            resolveCollision(a.body, b.body, *collision);
         }
     }
 }
@@ -443,6 +466,7 @@ void circlePolygonCollision(std::vector<Circle>& circles, std::vector<Polygon>& 
 std::optional<SATCollisionInfo> detectPolygonPolygonCollision(const Polygon & a, const Polygon & b) {
     float minPenetration = INF;
     Vec2 normalAB;
+    AxisInfo mtvAxis;
 
     std::vector<Vec2> verticesA = getVerticesPos(a);
     std::vector<Vec2> verticesB = getVerticesPos(b);
@@ -468,17 +492,19 @@ std::optional<SATCollisionInfo> detectPolygonPolygonCollision(const Polygon & a,
         // 一番小さい移動でめり込みを解消できる方向を保存
         if (minMoveB < minPenetration) {
             minPenetration = minMoveB;
+            mtvAxis = axis;
             // Bを動かす場合を考えているので、動かす方向がnormalAB
             normalAB = (minMoveB == moveBPositive) ? axis.candidateAxis : axis.candidateAxis * -1;
         }
     }
-    return SATCollisionInfo{ minPenetration, normalAB };
+    return SATCollisionInfo{ minPenetration, normalAB, mtvAxis};
 }
 
 
 std::optional<SATCollisionInfo> detectCirclePolygonCollision(const Circle& a, const Polygon& b) {
     float minPenetration = INF;
     Vec2 normalAB;
+    AxisInfo mtvAxis;
 
     std::vector<Vec2> verticesB = getVerticesPos(b);
 
@@ -503,18 +529,85 @@ std::optional<SATCollisionInfo> detectCirclePolygonCollision(const Circle& a, co
         // 一番小さい移動でめり込みを解消できる方向を保存
         if (minMoveB < minPenetration) {
             minPenetration = minMoveB;
+            mtvAxis = axis;
             // Bを動かす場合を考えているので、動かす方向がnormalAB
             normalAB = (minMoveB == moveBPositive) ? axis.candidateAxis : axis.candidateAxis * -1;
         }
     }
-    return SATCollisionInfo{ minPenetration, normalAB };
+    return SATCollisionInfo{ minPenetration, normalAB, mtvAxis};
+}
+
+
+/* Polygon-Polygon, ContactPoint */
+std::optional<CollisionInfo> generateCollisionInfo(const Polygon& a, const Polygon& b, const SATCollisionInfo& satCollision) {
+    std::vector<Vec2> verticesA = getVerticesPos(a);
+    std::vector<Vec2> verticesB = getVerticesPos(b);
+
+    std::vector<AxisInfo> axesA = getCandidateAxesForSAT(verticesA, 'a');
+    std::vector<AxisInfo> axesB = getCandidateAxesForSAT(verticesB, 'b');
+
+    // mtvを作った方をref(衝突された側と考える)にする。
+    bool referenceIsA = satCollision.mtvAxis.whichObj == 'a';
+
+    // incはrefと逆の物体を選ぶ
+    const Polygon& referenceObj = referenceIsA ? a : b;
+    const Polygon& incidentObj = referenceIsA ? b : a;
+
+    std::vector<AxisInfo> referenceAxes = referenceIsA ? axesA : axesB;
+    std::vector<AxisInfo> incidentAxes = referenceIsA ? axesB : axesA;
+
+    // 法線RI (接触点を生成用)
+    // reference -> incident に向きを統一
+    Vec2 normalRI = referenceIsA ?
+        satCollision.normalAB : satCollision.normalAB * (-1);
+
+    AxisInfo referenceAxis = detectReferenceAxis(normalRI, referenceAxes);
+    AxisInfo incidentAxis = detectIncidentAxis(normalRI, incidentAxes);
+
+    /* contacatPoint */
+    Vec2 contactPoint;
+
+    std::vector<Vec2> refVertices = getVerticesPos(referenceObj);
+    std::vector<Vec2> incVertices = getVerticesPos(incidentObj);
+    Edge refEdge = getEdge(refVertices, referenceAxis.edgeNum);
+    Edge incEdge = getEdge(incVertices, incidentAxis.edgeNum);
+
+
+    Vec2 refEdge12 = refEdge.p2 - refEdge.p1;
+    Vec2 refTangent = refEdge12.normalize();
+    Vec2 minusrefTangent = refTangent * -1;
+
+
+    /* p1より右側になるようにincEdgeをclipping */
+    auto clipped = clipSegmentToLine(incEdge, minusrefTangent, refEdge.p1);
+    // 接触点候補なし
+    if (!clipped) return std::nullopt;
+    /* p2より左側になるようにincEdgeをclipping */
+    clipped = clipSegmentToLine(*clipped, refTangent, refEdge.p2);
+    // 接触点候補なし
+    if (!clipped) return std::nullopt;
+    /* referenceEdgeより内側(obj内部) */
+    auto contactPoints = decideContactPoint(*clipped, normalRI, refEdge.p1);
+    // 接触点なし
+    if (!contactPoints) return std::nullopt;
+
+    /* ContactPoint決定 */
+    if (contactPoints->size() == 1) {
+        contactPoint = (*contactPoints)[0];
+    }
+    else if (contactPoints->size() == 2) {
+        // 二つある場合はとりあえず、中点(本当は2点に力積与えるのが正しい。)
+        contactPoint = ((*contactPoints)[0] + (*contactPoints)[1]) * 0.5f;
+    }
+
+    return CollisionInfo{ satCollision.penetration, satCollision.normalAB, contactPoint };
 }
 
 
 /* SATの候補軸を生成
 AxisInfo
 - candidateAxis
-- whixhObj: a or b
+- whichObj: a or b
 - edgeNum: 軸を生成した辺の番号(edgeNum = 0, vertices[0] -> vertices[1])
 */
 std::vector<AxisInfo> getCandidateAxesForSAT(std::vector<Vec2>& vertices, char whichObj) {
@@ -571,6 +664,116 @@ Interval getProjectedIntervalOnAxisFromCircle(const Circle& circle, const Vec2& 
     return Interval(project - circle.radius, project + circle.radius);
 }
 
+/*
+各辺の軸は外向きなので、
+
+Reference Edge
+→ normalRI と最も同じ向きの外向き法線
+→ dot 最大
+
+Incident Edge
+→ normalRI と最も逆向きの外向き法線
+→ dot 最小
+*/
+
+AxisInfo detectReferenceAxis(const Vec2& normalRI, const std::vector<AxisInfo>& axes) {
+    float maxDot = -INF;
+    AxisInfo refAxis;
+
+    for (const AxisInfo& axis : axes) {
+        float dotValue = dot(normalRI, axis.candidateAxis);
+
+        if (dotValue > maxDot) {
+            maxDot = dotValue;
+            refAxis = axis;
+        }
+    }
+    return refAxis;
+}
+
+AxisInfo detectIncidentAxis(const Vec2& normalRI, const std::vector<AxisInfo>& axes) {
+    float minDot = INF;
+    AxisInfo refAxis;
+
+    for (const AxisInfo& axis : axes) {
+        float dotValue = dot(normalRI, axis.candidateAxis);
+
+        if (dotValue < minDot) {
+            minDot = dotValue;
+            refAxis = axis;
+        }
+    }
+    return refAxis;
+}
+
+
+Edge getEdge(const std::vector<Vec2>& vertices, int edgeNum) {
+    int next = (edgeNum + 1) % vertices.size();
+    return { vertices[edgeNum], vertices[next] };
+}
+
+
+/* incEdgeの点を辺上(refEdge)の境界線内に収める (境界線で辺を切るイメージ) */
+// points: incEdgeの両端,これをboderPosでclippingする
+// borderNormal: 残したい方向と逆方向
+std::optional<Edge> clipSegmentToLine(Edge points, const Vec2& borderNormal, const Vec2& borderPos) {
+    Vec2 q1 = points.p1;
+    Vec2 q2 = points.p2;
+    float offset = dot(borderNormal, borderPos);
+    float d1 = dot(borderNormal, q1) - offset;
+    float d2 = dot(borderNormal, q2) - offset;
+
+    // d <= 0 なら、内側なのでそのまま、
+    // d > 0なら、外側なのでsを使ってclipping
+    if (d1 <= 0 && d2 <= 0) {
+        return Edge{ q1, q2 };
+    }
+    else if (d1 > 0 && d2 > 0) {
+        // 両方外側
+        return std::nullopt;
+    }
+
+    // points2点の辺を Q(s) = q1 + s(q2 - q1)のようにあらわしている。
+    // Q(s) dot borderNormal - offset = 0より sを導出 , 
+    // このsにおける点が、 points2点をつなぐ辺の境界線上の点を表すパラメータ
+    float s = -d1 / (d2 - d1);
+    Vec2 intersection = q1 + (q2 - q1) * s; // 境界線上の点
+
+    if (d1 <= 0 && d2 > 0) {
+        // q1 のみ内側 -> q2を境界線でclipping
+        q2 = intersection;
+        return Edge{ q1, q2 };
+    }
+    else {
+        // q2 のみ内側 -> q1を境界線でclipping
+        q1 = intersection;
+        return Edge{ q1, q2 };
+    }
+}
+
+
+std::optional<std::vector<Vec2>> decideContactPoint(Edge points, Vec2& borderNormal, Vec2& borderPos) {
+    std::vector<Vec2> contactPoints;
+    Vec2 q1 = points.p1;
+    Vec2 q2 = points.p2;
+    float offset = dot(borderNormal, borderPos);
+    float d1 = dot(borderNormal, q1) - offset;
+    float d2 = dot(borderNormal, q2) - offset;
+
+    // d <= 0 -> めり込んでる -> contactPos
+    if (d1 <= 0) {
+        contactPoints.push_back(q1);
+    }
+    if (d2 <= 0) {
+        contactPoints.push_back(q2);
+    }
+
+    // なかった場合
+    if (d1 > 0 && d2 > 0) {
+        return std::nullopt;
+    }
+    return contactPoints;
+}
 
 void resolveCollision(Body& a, Body& b, const CollisionInfo& collision) {
     Vec2 relativeVel = b.vel - a.vel; // とりあえず並進速度のみ
@@ -668,6 +871,27 @@ void render(SDL_Renderer* renderer) {
     }
 
     // DebugDraw
+    SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255); // 青
+    for (const DebugLine& line : debugLines) {
+        SDL_RenderLine(
+            renderer,
+            line.p1.x, line.p1.y,
+            line.p2.x, line.p2.y
+        );
+    }
+    SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255); // 赤
+    for (const Vec2& point : debugPoints) {
+        SDL_FRect rect;
+        float point_size = 10.0f; // 点の大きさ
+
+        // 中心が (x, y) になるように座標を調整
+        rect.x = point.x - (point_size / 2.0f);
+        rect.y = point.y - (point_size / 2.0f);
+        rect.w = point_size;
+        rect.h = point_size;
+
+        SDL_RenderFillRect(renderer, &rect);
+    }
 
     // Display
     SDL_RenderPresent(renderer);

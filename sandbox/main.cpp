@@ -53,9 +53,9 @@ struct Interval {
 };
 
 /* Obj用 */
-int circleNum = 1;
+int circleNum = 10;
 std::vector<Circle> circles(circleNum);
-int rectangleNum = 1;
+int rectangleNum = 10;
 std::vector<Polygon> rectangles(rectangleNum);
 
 /* プロトタイプ宣言 */
@@ -527,7 +527,7 @@ Vec2 getCandidateAxisForSATFromCircle(const Body& circleBody, const std::vector<
         float distance = vertexToCenter.length();
         if (distance < minDistance) {
             minDistance = distance;
-            axis = vertexToCenter;
+            axis = vertexToCenter.normalize();
         }
     }
     return axis;

@@ -86,8 +86,8 @@ std::vector<Vec2> debugPoints;
 /* Obj用 */
 int circleNum = 0;
 std::vector<Circle> circles(circleNum);
-int rectangleNum = 5;
-int triangleNum = 5;
+int rectangleNum = 2;
+int triangleNum = 0;
 std::vector<Polygon> polygons;
 
 /* プロトタイプ宣言 */
@@ -121,8 +121,10 @@ AxisInfo detectIncidentAxis(const Vec2& normalRI, const std::vector<AxisInfo>& a
 Edge getEdge(const std::vector<Vec2>& vertices, int edgeNum);
 std::optional<Edge> clipSegmentToLine(Edge points, const Vec2& borderNormal, const Vec2& borderPos);
 std::optional<std::vector<Vec2>> decideContactPoint(Edge points, Vec2& borderNormal, Vec2& borderPos);
+
+/* 応答 */
 void resolveCollision(Body& a, Body& b, const CollisionInfo& collision);
-void applyImpulse(Body& a, Body& b, Vec2& Impulse);
+void applyImpulse(Body& body, const Vec2& impulse, const Vec2& contactArm);
 
 /* Initialize Obj */
 void InitializeObj();
@@ -134,7 +136,9 @@ void drawPolygon(SDL_Renderer* renderer, const Polygon& polygon);
 
 /* Utility Func */
 float dot(const Vec2& a, const Vec2& b);
+float cross(const Vec2& a, const Vec2& b);
 std::vector<Vec2> getVerticesPos(const Polygon& polygon);
+Vec2 getContactVelocity(const Body& body, const Vec2& contactArm);
 Vec2 rotate(const Vec2& v, float angle);
 
 /* 定数 */
@@ -793,16 +797,42 @@ std::optional<std::vector<Vec2>> decideContactPoint(Edge points, Vec2& borderNor
     return contactPoints;
 }
 
+
+/* 共通応答 */
 void resolveCollision(Body& a, Body& b, const CollisionInfo& collision) {
-    Vec2 relativeVel = b.vel - a.vel; // とりあえず並進速度のみ
-    float vn = dot(relativeVel, collision.normalAB);
+    const Vec2 contactPoint = collision.contactPoint;
+    const Vec2 normal = collision.normalAB;
+    const Vec2 tangent = normal.perpendicular();
+    const float penetration = collision.penetration;
+
+    // 重心から接触点へのベクトル
+    Vec2 contactArmA = contactPoint - a.pos;
+    Vec2 contactArmB = contactPoint - b.pos;
+
+    Vec2 contactVelA = getContactVelocity(a, contactArmA);
+    Vec2 contactVelB = getContactVelocity(b, contactArmB);
+
+    Vec2 relativeVel = contactVelB - contactVelA;
+    float vn = dot(relativeVel, normal);
 
     // 近づいている場合は力積作用
     if (vn < 0) {
-        float effectiveMassNormal = a.invMass + b.invMass;
+        // 有効質量
+        float rnA = cross(contactArmA, normal);
+        float rnB = cross(contactArmB, normal);
+        float effectiveMassNormal =
+            a.invMass + b.invMass
+            + rnA * rnA * a.invInertia
+            + rnB * rnB * b.invInertia;
+
+        // 法線力積
         float normalImpulseScalar = -(1 + OBJRESTITUTION) * vn / effectiveMassNormal;
-        Vec2 Jn = collision.normalAB * normalImpulseScalar;
-        applyImpulse(a, b, Jn);
+        Vec2 Jn = normal * normalImpulseScalar;
+
+        // 力積適用
+        // A: -Jn, B: Jn
+        applyImpulse(a, Jn * -1, contactArmA);
+        applyImpulse(b, Jn, contactArmB);
     }
 
 
@@ -812,11 +842,9 @@ void resolveCollision(Body& a, Body& b, const CollisionInfo& collision) {
     b.pos += collision.normalAB * collision.penetration * b.invMass / invMassSum;
 }
 
-void applyImpulse(Body& a, Body& b, Vec2& Impulse) {
-    // AB方向の法線で考えているので、
-    // Aには -Impulse , Bには Impulse
-    a.vel -= Impulse * a.invMass;
-    b.vel += Impulse * b.invMass;
+void applyImpulse(Body& body,const Vec2& impulse, const Vec2& contactArm) {
+    body.vel += impulse * body.invMass;
+    body.angularVel += cross(contactArm, impulse) * body.invInertia;
 }
 
 
@@ -1067,6 +1095,10 @@ float dot(const Vec2& a, const Vec2& b) {
     return a.x * b.x + a.y * b.y;
 }
 
+float cross(const Vec2& a, const Vec2& b) {
+    return a.x * b.y - b.x * a.y;
+}
+
 std::vector<Vec2> getVerticesPos(const Polygon& polygon) {
     std::vector<Vec2> worldVertices;
     for (const Vec2& localVertex : polygon.localVertices) {
@@ -1074,6 +1106,12 @@ std::vector<Vec2> getVerticesPos(const Polygon& polygon) {
         worldVertices.push_back(polygon.body.pos + rotated);
     }
     return worldVertices;
+}
+
+Vec2 getContactVelocity(const Body& body, const Vec2& contactArm) {
+    // omega cross r: 接線方向と考えてよい(rに垂直)
+    Vec2 rotationVel = contactArm.perpendicular() * body.angularVel;
+    return body.vel + rotationVel;
 }
 
 // 時計回りを正

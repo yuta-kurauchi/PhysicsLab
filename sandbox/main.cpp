@@ -89,7 +89,7 @@ std::vector<Vec2> debugPoints;
 int circleNum = 0;
 std::vector<Circle> circles(circleNum);
 int rectangleNum = 1;
-int triangleNum = 0;
+int triangleNum = 1;
 std::vector<Polygon> polygons;
 
 /* プロトタイプ宣言 */
@@ -142,12 +142,15 @@ float cross(const Vec2& a, const Vec2& b);
 std::vector<Vec2> getVerticesPos(const Polygon& polygon);
 Vec2 getContactVelocity(const Body& body, const Vec2& contactArm);
 Vec2 rotate(const Vec2& v, float angle);
+float clamp(const float value, const float min, const float max);
 
 /* 定数 */
 const double PI = std::acos(-1.0);
 const float GRAVITY = 98.0f;
 const float WALLRESTITUTION = 0.55f;
 const float OBJRESTITUTION = 0.75f;
+const float WALLKINETICMU = 0.4f;
+const float OBJMU = 0.5f;
 const float INF = std::numeric_limits<float>::infinity();
 
 // WindowSize
@@ -452,7 +455,7 @@ void resolveWallCollision(Body& body, const CollisionInfo& collision) {
 
     Vec2 contactVelB = getContactVelocity(body, contactArmB);
 
-    Vec2 relativeVel = contactVelB - Vec2(0.0f, 0.0f); // 壁は速度0
+    Vec2 relativeVel = contactVelB - Vec2(); // 壁は速度0
     float vn = dot(relativeVel, normal);
 
     // 近づいている場合は力積作用
@@ -470,6 +473,26 @@ void resolveWallCollision(Body& body, const CollisionInfo& collision) {
         // 力積適用
         // A: -Jn, B: Jn
         applyImpulse(body, Jn, contactArmB);
+
+        // 反映した後なので再計算
+        Vec2 contactVelB = getContactVelocity(body, contactArmB);
+        Vec2 relativeVel = contactVelB - Vec2();
+
+        float vt = dot(relativeVel, tangent);
+
+        float rtB = cross(contactArmB, tangent);
+        float effectiveMassTangent =
+            body.invMass
+            + rtB * rtB * body.invInertia;
+
+        float tangentImpulseScalar = -vt / effectiveMassTangent;
+        // maxFriction = μ Jn, 接触継続は考慮していない。
+        float maxFrictionImpulseScalar = WALLKINETICMU * normalImpulseScalar;
+        float frictionImpulseScalar = clamp(tangentImpulseScalar, -maxFrictionImpulseScalar, maxFrictionImpulseScalar);
+
+        Vec2 Jt = tangent * frictionImpulseScalar;
+        // A: -Jt, B: Jt
+        applyImpulse(body, Jt, contactArmB);
     }
 
 
@@ -905,6 +928,31 @@ void resolveCollision(Body& a, Body& b, const CollisionInfo& collision) {
         // A: -Jn, B: Jn
         applyImpulse(a, Jn * -1, contactArmA);
         applyImpulse(b, Jn, contactArmB);
+
+
+        // 反映した後なので再計算
+        Vec2 contactVelA = getContactVelocity(a, contactArmA);
+        Vec2 contactVelB = getContactVelocity(b, contactArmB);
+        Vec2 relativeVel = contactVelB - contactVelA;
+
+        float vt = dot(relativeVel, tangent);
+
+        float rtA = cross(contactArmA, tangent);
+        float rtB = cross(contactArmB, tangent);
+        float effectiveMassTangent =
+            a.invMass + b.invMass
+            + rtA * rtA * a.invInertia
+            + rtB * rtB * b.invInertia;
+
+        float tangentImpulseScalar = -vt / effectiveMassTangent;
+        // maxFriction = μ Jn
+        float maxFrictionImpulseScalar = OBJMU * normalImpulseScalar;
+        float frictionImpulseScalar = clamp(tangentImpulseScalar, -maxFrictionImpulseScalar, maxFrictionImpulseScalar);
+
+        Vec2 Jt = tangent * frictionImpulseScalar;
+        // A: -Jt, B: Jt
+        applyImpulse(a, Jt * -1, contactArmA);
+        applyImpulse(b, Jt, contactArmB);
     }
 
 
@@ -975,7 +1023,7 @@ void InitializeObj() {
 
         body.pos = Vec2(posX(gen), posY(gen));
 
-        body.vel = Vec2(); // Vec2(velocity(gen), velocity(gen))
+        body.vel = Vec2(velocity(gen), velocity(gen));
 
         // 頂点(反時計回り)
         rectangle.localVertices.resize(4);
@@ -984,7 +1032,7 @@ void InitializeObj() {
         rectangle.localVertices[2] = Vec2(w / 2.0f, h / 2.0f);
         rectangle.localVertices[3] = Vec2(w / 2.0f, -h / 2.0f);
 
-        body.angle = PI / 4.0f;
+        body.angle = angle(gen);
         body.angularVel = 0.0f;
 
         body.inertia = body.mass * (w * w + h * h) / 12.0f; // I_z = m (w^2 + h^2) / 12
@@ -1195,4 +1243,9 @@ Vec2 rotate(const Vec2& v, float angle) {
         v.x * c - v.y * s,
         v.x * s + v.y * c
     );
+}
+
+// min <= value <= max
+float clamp(const float value, const float min, const float max) {
+    return std::max(min, std::min(value, max));
 }

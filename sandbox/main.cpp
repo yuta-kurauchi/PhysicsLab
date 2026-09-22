@@ -53,6 +53,8 @@ struct CollisionInfo {
     float penetration;
     Vec2 normalAB; // 衝突法線: 物理処理の都合から、ABに統一して管理
     Vec2 contactPoint; // 接触点のワールド座標(いずれベクトルに変更,とりま1点のみ保持)
+    CollisionInfo(float penetration, Vec2 normalAB, Vec2 contactPoint)
+        : penetration(penetration), normalAB(normalAB), contactPoint(contactPoint) {};
 };
 
 struct SATCollisionInfo {
@@ -86,7 +88,7 @@ std::vector<Vec2> debugPoints;
 /* Obj用 */
 int circleNum = 0;
 std::vector<Circle> circles(circleNum);
-int rectangleNum = 2;
+int rectangleNum = 1;
 int triangleNum = 0;
 std::vector<Polygon> polygons;
 
@@ -104,7 +106,7 @@ void updateAngle(Body& body, float dt);
 /* Collision */
 void circleWallCollision(Circle& cirlce);
 void polygonWallCollision(std::vector<Polygon>& polygons);
-void resolveWallCollision(Body& body, const Vec2& normal, const float penetration);
+void resolveWallCollision(Body& body, const CollisionInfo& collision);
 void circleCircleCollision();
 std::optional<CollisionInfo> detectCircleCircleCollision(const Circle& a, const Circle&b);
 void polygonPolygonCollision(std::vector<Polygon>& polygons);
@@ -144,7 +146,7 @@ Vec2 rotate(const Vec2& v, float angle);
 /* 定数 */
 const double PI = std::acos(-1.0);
 const float GRAVITY = 98.0f;
-const float WALLRESTITUTION = 0.75f;
+const float WALLRESTITUTION = 0.55f;
 const float OBJRESTITUTION = 0.75f;
 const float INF = std::numeric_limits<float>::infinity();
 
@@ -311,27 +313,51 @@ void circleWallCollision(Circle& circle) {
     Body& body = circle.body;
     // LeftWall
     if (body.pos.x - circle.radius < 0.0f) {
-        Vec2 normal(1.0f, 0.0f);
         float penetration = -(body.pos.x - circle.radius);
-        resolveWallCollision(body, normal, penetration);
+        Vec2 normal(1.0f, 0.0f);
+        Vec2 contactPoint(body.pos.x - circle.radius, body.pos.y);
+        CollisionInfo collision(
+            penetration,
+            normal,
+            contactPoint
+        );
+        resolveWallCollision(body, collision);
     }
     // RightWall
     if (body.pos.x + circle.radius > W) {
         Vec2 normal(-1.0f, 0.0f);
         float penetration = body.pos.x + circle.radius - W;
-        resolveWallCollision(body, normal, penetration);
+        Vec2 contactPoint(body.pos.x + circle.radius, body.pos.y);
+        CollisionInfo collision(
+            penetration,
+            normal,
+            contactPoint
+        );
+        resolveWallCollision(body, collision);
     }
     // TopWall
     if (body.pos.y - circle.radius < 0.0f) {
         Vec2 normal(0.0f, 1.0f);
         float penetration = -(body.pos.y - circle.radius);
-        resolveWallCollision(body, normal, penetration);
+        Vec2 contactPoint(body.pos.x, body.pos.y - circle.radius);
+        CollisionInfo collision(
+            penetration,
+            normal,
+            contactPoint
+        );
+        resolveWallCollision(body, collision);
     }
     // BottomWall
     if (body.pos.y + circle.radius > H) {
         Vec2 normal(0.0f, -1.0f);
         float penetration = body.pos.y + circle.radius - H;
-        resolveWallCollision(body, normal, penetration);
+        Vec2 contactPoint(body.pos.x, body.pos.y + circle.radius);
+        CollisionInfo collision(
+            penetration,
+            normal,
+            contactPoint
+        );
+        resolveWallCollision(body, collision);
     }
 }
 
@@ -346,18 +372,25 @@ void polygonWallCollision(std::vector<Polygon>& polygons) {
         float right = -INF;
         float top = INF;
         float bottom = -INF;
+        Vec2 cLeft, cRight, cTop, cBottom;
         for (Vec2& vertex : vertices) {
-            if (vertex.x < left) {
-                left = vertex.x;
+            float x = vertex.x;
+            float y = vertex.y;
+            if (x < left) {
+                left = x;
+                cLeft = vertex;
             }
-            if (vertex.x > right) {
-                right = vertex.x;
+            if (x > right) {
+                right = x;
+                cRight = vertex;
             }
-            if (vertex.y < top) {
-                top = vertex.y;
+            if (y < top) {
+                top = y;
+                cTop = vertex;
             }
-            if (vertex.y > bottom) {
-                bottom = vertex.y;
+            if (y > bottom) {
+                bottom = y;
+                cBottom = vertex;
             }
         }
 
@@ -366,38 +399,77 @@ void polygonWallCollision(std::vector<Polygon>& polygons) {
             // 壁をobjとして扱うようにするときにやる。
             Vec2 normal(1.0f, 0.0f);
             float penetration = -left;
-            resolveWallCollision(body, normal, penetration);
+            CollisionInfo collision(
+                penetration,
+                normal,
+                cLeft
+            );
+            resolveWallCollision(body, collision);
         }
         if (right > W) {
             Vec2 normal(-1.0f, 0.0f);
             float penetration = right - W;
-            resolveWallCollision(body, normal, penetration);
+            CollisionInfo collision(
+                penetration,
+                normal,
+                cRight
+            );
+            resolveWallCollision(body, collision);
         }
         if (top < 0.0f) {
             Vec2 normal(0.0f, 1.0f);
             float penetration = -top;
-            resolveWallCollision(body, normal, penetration);
+            CollisionInfo collision(
+                penetration,
+                normal,
+                cTop
+            );
+            resolveWallCollision(body, collision);
         }
         if (bottom > H) {
             Vec2 normal(0.0f, -1.0f);
             float penetration = bottom - H;
-            resolveWallCollision(body, normal, penetration);
+            CollisionInfo collision(
+                penetration,
+                normal,
+                cBottom
+            );
+            resolveWallCollision(body, collision);
         }
     }
 }
 
 // normalは壁のほう線を使っているので、物体はBだと考える
-void resolveWallCollision(Body& body, const Vec2& normal, const float penetration) {
-    // とりあえず並進速度のみ
-    float vn = dot(body.vel, normal);
+void resolveWallCollision(Body& body, const CollisionInfo& collision) {
+    const float penetration = collision.penetration;
+    const Vec2& normal = collision.normalAB;
+    const Vec2& tangent = normal.perpendicular();
+    const Vec2& contactPoint = collision.contactPoint;
+
+
+    // 重心から接触点へのベクトル
+    Vec2 contactArmB = contactPoint - body.pos;
+
+    Vec2 contactVelB = getContactVelocity(body, contactArmB);
+
+    Vec2 relativeVel = contactVelB - Vec2(0.0f, 0.0f); // 壁は速度0
+    float vn = dot(relativeVel, normal);
 
     // 近づいている場合は力積作用
     if (vn < 0) {
-        // Jn = -m v_x (1 + e), 壁を質量無限のobjにすれば物体同士と同じようにできる。
-        float normalImpulseScalar = -(1 + WALLRESTITUTION) * vn * body.mass;
+        // 有効質量
+        float rnB = cross(contactArmB, normal);
+        float effectiveMassNormal =
+            body.invMass
+            + rnB * rnB * body.invInertia;
+
+        // 法線力積
+        float normalImpulseScalar = -(1 + WALLRESTITUTION) * vn / effectiveMassNormal;
         Vec2 Jn = normal * normalImpulseScalar;
-        // applyImpulse, 物体はBと考えられるので、+Jn
-        body.vel += Jn / body.mass;
+
+        // 力積適用
+        // A: -Jn, B: Jn
+        applyImpulse(body, Jn, contactArmB);
     }
 
 
@@ -903,7 +975,7 @@ void InitializeObj() {
 
         body.pos = Vec2(posX(gen), posY(gen));
 
-        body.vel = Vec2(velocity(gen), velocity(gen));
+        body.vel = Vec2(); // Vec2(velocity(gen), velocity(gen))
 
         // 頂点(反時計回り)
         rectangle.localVertices.resize(4);
@@ -912,7 +984,7 @@ void InitializeObj() {
         rectangle.localVertices[2] = Vec2(w / 2.0f, h / 2.0f);
         rectangle.localVertices[3] = Vec2(w / 2.0f, -h / 2.0f);
 
-        body.angle = angle(gen);
+        body.angle = PI / 4.0f;
         body.angularVel = 0.0f;
 
         body.inertia = body.mass * (w * w + h * h) / 12.0f; // I_z = m (w^2 + h^2) / 12

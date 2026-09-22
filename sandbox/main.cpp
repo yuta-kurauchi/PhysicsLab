@@ -86,10 +86,10 @@ std::vector<DebugLine> debugLines;
 std::vector<Vec2> debugPoints;
 
 /* Obj用 */
-int circleNum = 0;
+int circleNum = 5;
 std::vector<Circle> circles(circleNum);
-int rectangleNum = 1;
-int triangleNum = 1;
+int rectangleNum = 5;
+int triangleNum = 5;
 std::vector<Polygon> polygons;
 
 /* プロトタイプ宣言 */
@@ -547,7 +547,8 @@ void polygonPolygonCollision(std::vector<Polygon>& polygons) {
             // 衝突なし
             if (!satCollision) continue;
 
-            // contactPoint取得(現状は並進のみなので、回転を実装する際に実装)
+            // contactPoint取得
+            // 現状、2点接触の場合は中点を1接触点として扱う
             const auto collision = generateCollisionInfo(a, b, *satCollision);
 
             if (!collision) continue;
@@ -958,8 +959,8 @@ void resolveCollision(Body& a, Body& b, const CollisionInfo& collision) {
 
     // めり込み補正(質量の逆比で移動)
     float invMassSum = a.invMass + b.invMass;
-    a.pos -= collision.normalAB * collision.penetration * a.invMass / invMassSum;
-    b.pos += collision.normalAB * collision.penetration * b.invMass / invMassSum;
+    a.pos -= normal * penetration * a.invMass / invMassSum;
+    b.pos += normal * penetration * b.invMass / invMassSum;
 }
 
 void applyImpulse(Body& body,const Vec2& impulse, const Vec2& contactArm) {
@@ -1102,7 +1103,7 @@ void render(SDL_Renderer* renderer) {
             line.p2.x, line.p2.y
         );
     }
-    SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255); // 赤
+    SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255); // 緑
     for (const Vec2& point : debugPoints) {
         SDL_FRect rect;
         float point_size = 10.0f; // 点の大きさ

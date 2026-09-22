@@ -25,7 +25,10 @@ struct Body {
     Vec2 acc;
     float mass;
     float invMass;
-    float angle; // 時計回りが正
+    float angle; // 時計回りが正, rad
+    float angularVel; // rad/s
+    float inertia;
+    float invInertia;
 };
 
 struct Circle {
@@ -81,10 +84,10 @@ std::vector<DebugLine> debugLines;
 std::vector<Vec2> debugPoints;
 
 /* Obj用 */
-int circleNum = 10;
+int circleNum = 0;
 std::vector<Circle> circles(circleNum);
-int rectangleNum = 10;
-int triangleNum = 10;
+int rectangleNum = 5;
+int triangleNum = 5;
 std::vector<Polygon> polygons;
 
 /* プロトタイプ宣言 */
@@ -92,10 +95,11 @@ std::vector<Polygon> polygons;
 /* UpdatePhysics */
 void updatePhysics(float dt);
 
-/* 加速度・速度・位置更新 */
+/* 加速度・速度・位置・角度更新 */
 void updateAcc(Body& body);
 void updateVel(Body& body, float dt);
 void updatePos(Body& body, float dt);
+void updateAngle(Body& body, float dt);
 
 /* Collision */
 void circleWallCollision(Circle& cirlce);
@@ -258,11 +262,13 @@ void updatePhysics(float dt) {
         updateAcc(circle.body);
         updateVel(circle.body, dt);
         updatePos(circle.body, dt);
+        updateAngle(circle.body, dt);
     }
     for (Polygon& polygon : polygons) {
         updateAcc(polygon.body);
         updateVel(polygon.body, dt);
         updatePos(polygon.body, dt);
+        updateAngle(polygon.body, dt);
     }
 
     /* WallCollision */
@@ -278,7 +284,7 @@ void updatePhysics(float dt) {
 };
 
 
-/* 加速度・速度・位置更新 */
+/* 加速度・速度・位置・角度更新 */
 void updateAcc(Body& body) {
     body.acc = Vec2(0.0f, 1.0f) * GRAVITY;
 }
@@ -289,6 +295,9 @@ void updateVel(Body& body, float dt) {
 
 void updatePos(Body& body, float dt) {
     body.pos += body.vel * dt;
+}
+void updateAngle(Body& body, float dt) {
+    body.angle += body.angularVel * dt;
 }
 
 
@@ -832,34 +841,41 @@ void InitializeObj() {
     std::uniform_real_distribution<float> velocity(-100.0f, 100.0f);
     std::uniform_real_distribution<float> length(minLength, maxLength);
     std::uniform_real_distribution<float> radius(minRadius, maxRadius);
-    std::uniform_real_distribution<float> angle(0.0f, 2.0f * PI);
+    std::uniform_real_distribution<float> angle(0.0f, 2.0f * PI); // rad
 
     
     // circle
     for (Circle& circle : circles) {
+        Body& body = circle.body;
         circle.radius = radius(gen);
         // 面積に比例
-        circle.body.mass = minMass + (maxMass - minMass) * ((circle.radius * circle.radius) / (maxRadius * maxRadius));
-        circle.body.invMass = 1.0f / circle.body.mass;
+        body.mass = minMass + (maxMass - minMass) * ((circle.radius * circle.radius) / (maxRadius * maxRadius));
+        body.invMass = 1.0f / body.mass;
 
-        circle.body.pos = Vec2(posX(gen), posY(gen));
+        body.pos = Vec2(posX(gen), posY(gen));
 
-        circle.body.vel = Vec2(velocity(gen), velocity(gen));
+        body.vel = Vec2(velocity(gen), velocity(gen));
         
+        body.angle = angle(gen);
+        body.angularVel = 0.0f;
+
+        body.inertia = body.mass * circle.radius * circle.radius * 0.5f; // I_z = m r^2 / 2
+        body.invInertia = 1.0f / body.inertia;
     }
 
     // rectangle
     for (int i = 0; i < rectangleNum; ++i) {
         Polygon rectangle;
+        Body& body = rectangle.body;
         float w = length(gen);
         float h = length(gen);
         // 面積に比例
-        rectangle.body.mass = minMass + (maxMass - minMass) * ((w * h) / (maxLength * maxLength));
-        rectangle.body.invMass = 1.0f / rectangle.body.mass;
+        body.mass = minMass + (maxMass - minMass) * ((w * h) / (maxLength * maxLength));
+        body.invMass = 1.0f / body.mass;
 
-        rectangle.body.pos = Vec2(posX(gen), posY(gen));
+        body.pos = Vec2(posX(gen), posY(gen));
 
-        rectangle.body.vel = Vec2(velocity(gen), velocity(gen));
+        body.vel = Vec2(velocity(gen), velocity(gen));
 
         // 頂点(反時計回り)
         rectangle.localVertices.resize(4);
@@ -868,7 +884,11 @@ void InitializeObj() {
         rectangle.localVertices[2] = Vec2(w / 2.0f, h / 2.0f);
         rectangle.localVertices[3] = Vec2(w / 2.0f, -h / 2.0f);
 
-        rectangle.body.angle = angle(gen);
+        body.angle = angle(gen);
+        body.angularVel = 0.0f;
+
+        body.inertia = body.mass * (w * w + h * h) / 12.0f; // I_z = m (w^2 + h^2) / 12
+        body.invInertia = 1.0f / body.inertia;
 
         // 緑
         rectangle.rgb.g = 1.0f;
@@ -879,15 +899,16 @@ void InitializeObj() {
     // triangle
     for (int i = 0; i < triangleNum; ++i) {
         Polygon triangle;
+        Body& body = triangle.body;
         float w = length(gen);
         float h = length(gen);
         // 面積に比例
-        triangle.body.mass = minMass + (maxMass - minMass) * ((w * h) / (maxLength * maxLength));
-        triangle.body.invMass = 1.0f / triangle.body.mass;
+        body.mass = minMass + (maxMass - minMass) * ((w * h) / (maxLength * maxLength));
+        body.invMass = 1.0f / body.mass;
 
-        triangle.body.pos = Vec2(posX(gen), posY(gen));
+        body.pos = Vec2(posX(gen), posY(gen));
 
-        triangle.body.vel = Vec2(velocity(gen), velocity(gen));
+        body.vel = Vec2(velocity(gen), velocity(gen));
 
         // 頂点(反時計回り)
         triangle.localVertices.resize(3);
@@ -895,7 +916,11 @@ void InitializeObj() {
         triangle.localVertices[1] = Vec2(-w / 2.0f, h / 3.0f);
         triangle.localVertices[2] = Vec2(w / 2.0f, h / 3.0f);
 
-        triangle.body.angle = angle(gen);
+        body.angle = angle(gen);
+        body.angularVel = 0.0f;
+
+        body.inertia = body.mass * ((w * w / 24.0f) + (h * h / 18.0f)); // I_z = m (w^2 / 24 + h^2 / 18)
+        body.invInertia = 1.0f / body.inertia;
 
         // 青
         triangle.rgb.b = 1.0f;

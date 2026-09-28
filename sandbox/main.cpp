@@ -52,9 +52,7 @@ struct AxisInfo {
 struct CollisionInfo {
     float penetration;
     Vec2 normalAB; // 衝突法線: 物理処理の都合から、ABに統一して管理
-    Vec2 contactPoint; // 接触点のワールド座標(いずれベクトルに変更,とりま1点のみ保持)
-    CollisionInfo(float penetration, Vec2 normalAB, Vec2 contactPoint)
-        : penetration(penetration), normalAB(normalAB), contactPoint(contactPoint) {};
+    std::vector<Vec2> contactPoints; // 接触点のワールド座標(いずれベクトルに変更,とりま1点のみ保持)
 };
 
 struct SATCollisionInfo {
@@ -319,11 +317,12 @@ void circleWallCollision(Circle& circle) {
         float penetration = -(body.pos.x - circle.radius);
         Vec2 normal(1.0f, 0.0f);
         Vec2 contactPoint(body.pos.x - circle.radius, body.pos.y);
-        CollisionInfo collision(
+        std::vector<Vec2> contactPoints = { contactPoint };
+        CollisionInfo collision{
             penetration,
             normal,
-            contactPoint
-        );
+            contactPoints
+        };
         resolveWallCollision(body, collision);
     }
     // RightWall
@@ -331,11 +330,12 @@ void circleWallCollision(Circle& circle) {
         Vec2 normal(-1.0f, 0.0f);
         float penetration = body.pos.x + circle.radius - W;
         Vec2 contactPoint(body.pos.x + circle.radius, body.pos.y);
-        CollisionInfo collision(
+        std::vector<Vec2> contactPoints = { contactPoint };
+        CollisionInfo collision{
             penetration,
             normal,
-            contactPoint
-        );
+            contactPoints
+        };
         resolveWallCollision(body, collision);
     }
     // TopWall
@@ -343,11 +343,12 @@ void circleWallCollision(Circle& circle) {
         Vec2 normal(0.0f, 1.0f);
         float penetration = -(body.pos.y - circle.radius);
         Vec2 contactPoint(body.pos.x, body.pos.y - circle.radius);
-        CollisionInfo collision(
+        std::vector<Vec2> contactPoints = { contactPoint };
+        CollisionInfo collision{
             penetration,
             normal,
-            contactPoint
-        );
+            contactPoints
+        };
         resolveWallCollision(body, collision);
     }
     // BottomWall
@@ -355,11 +356,12 @@ void circleWallCollision(Circle& circle) {
         Vec2 normal(0.0f, -1.0f);
         float penetration = body.pos.y + circle.radius - H;
         Vec2 contactPoint(body.pos.x, body.pos.y + circle.radius);
-        CollisionInfo collision(
+        std::vector<Vec2> contactPoints = { contactPoint };
+        CollisionInfo collision{
             penetration,
             normal,
-            contactPoint
-        );
+            contactPoints
+        };
         resolveWallCollision(body, collision);
     }
 }
@@ -402,41 +404,45 @@ void polygonWallCollision(std::vector<Polygon>& polygons) {
             // 壁をobjとして扱うようにするときにやる。
             Vec2 normal(1.0f, 0.0f);
             float penetration = -left;
-            CollisionInfo collision(
+            std::vector<Vec2> contactPoints = { cLeft };
+            CollisionInfo collision{
                 penetration,
                 normal,
-                cLeft
-            );
+                contactPoints
+            };
             resolveWallCollision(body, collision);
         }
         if (right > W) {
             Vec2 normal(-1.0f, 0.0f);
             float penetration = right - W;
-            CollisionInfo collision(
+            std::vector<Vec2> contactPoints = { cRight };
+            CollisionInfo collision{
                 penetration,
                 normal,
-                cRight
-            );
+                contactPoints
+            };
             resolveWallCollision(body, collision);
         }
         if (top < 0.0f) {
             Vec2 normal(0.0f, 1.0f);
             float penetration = -top;
-            CollisionInfo collision(
+            std::vector<Vec2> contactPoints = { cTop };
+            CollisionInfo collision{
                 penetration,
                 normal,
-                cTop
-            );
+                contactPoints
+            };
             resolveWallCollision(body, collision);
         }
         if (bottom > H) {
             Vec2 normal(0.0f, -1.0f);
             float penetration = bottom - H;
-            CollisionInfo collision(
+            std::vector<Vec2> contactPoints = { cBottom };
+            CollisionInfo collision{
                 penetration,
                 normal,
-                cBottom
-            );
+                contactPoints
+            };
             resolveWallCollision(body, collision);
         }
     }
@@ -447,9 +453,7 @@ void resolveWallCollision(Body& body, const CollisionInfo& collision) {
     const float penetration = collision.penetration;
     const Vec2& normal = collision.normalAB;
     const Vec2& tangent = normal.perpendicular();
-    const Vec2& contactPoint = collision.contactPoint;
-
-
+    const Vec2& contactPoint = collision.contactPoints[0]; // 現状一点のみ応答
     // 重心から接触点へのベクトル
     Vec2 contactArmB = contactPoint - body.pos;
 
@@ -494,8 +498,7 @@ void resolveWallCollision(Body& body, const CollisionInfo& collision) {
         // A: -Jt, B: Jt
         applyImpulse(body, Jt, contactArmB);
     }
-
-
+    
     // めり込み補正
     body.pos += normal * penetration;
 }
@@ -529,7 +532,8 @@ std::optional<CollisionInfo> detectCircleCircleCollision(const Circle& a, const 
         Vec2 pointA = a.body.pos + normalAB * a.radius;
         Vec2 pointB = b.body.pos - normalAB * b.radius;
         Vec2 contactPoint = (pointA + pointB) * 0.5f;
-        return CollisionInfo{penetration, normalAB, contactPoint};
+        std::vector<Vec2> contactPoints = { contactPoint };
+        return CollisionInfo{penetration, normalAB, contactPoints};
     } else {
         return std::nullopt;
     }
@@ -572,7 +576,8 @@ void circlePolygonCollision(std::vector<Circle>& circles, std::vector<Polygon>& 
             /* CollisionInfo */
             // 円が埋まっている場合などを考慮した接触点ではないので後に改良する
             Vec2 contactPoint = a.body.pos + satCollision->normalAB * a.radius;
-            CollisionInfo collision{ (*satCollision).penetration, (*satCollision).normalAB, contactPoint };
+            std::vector<Vec2> contactPoints = { contactPoint };
+            CollisionInfo collision{ (*satCollision).penetration, (*satCollision).normalAB, contactPoints };
 
             // resolve
             resolveCollision(a.body, b.body, collision);
@@ -656,7 +661,7 @@ std::optional<SATCollisionInfo> detectCirclePolygonCollision(const Circle& a, co
 }
 
 
-/* Polygon-Polygon, ContactPoint */
+/* Polygon-Polygon, ContactPoints */
 std::optional<CollisionInfo> generateCollisionInfo(const Polygon& a, const Polygon& b, const SATCollisionInfo& satCollision) {
     std::vector<Vec2> verticesA = getVerticesPos(a);
     std::vector<Vec2> verticesB = getVerticesPos(b);
@@ -709,16 +714,7 @@ std::optional<CollisionInfo> generateCollisionInfo(const Polygon& a, const Polyg
     // 接触点なし
     if (!contactPoints) return std::nullopt;
 
-    /* ContactPoint決定 */
-    if (contactPoints->size() == 1) {
-        contactPoint = (*contactPoints)[0];
-    }
-    else if (contactPoints->size() == 2) {
-        // 二つある場合はとりあえず、中点(本当は2点に力積与えるのが正しい。)
-        contactPoint = ((*contactPoints)[0] + (*contactPoints)[1]) * 0.5f;
-    }
-
-    return CollisionInfo{ satCollision.penetration, satCollision.normalAB, contactPoint };
+    return CollisionInfo{ satCollision.penetration, satCollision.normalAB, *contactPoints };
 }
 
 
@@ -896,7 +892,7 @@ std::optional<std::vector<Vec2>> decideContactPoint(Edge points, Vec2& borderNor
 
 /* 共通応答 */
 void resolveCollision(Body& a, Body& b, const CollisionInfo& collision) {
-    const Vec2 contactPoint = collision.contactPoint;
+    const Vec2 contactPoint = collision.contactPoints[0]; // 現状一点応答
     const Vec2 normal = collision.normalAB;
     const Vec2 tangent = normal.perpendicular();
     const float penetration = collision.penetration;

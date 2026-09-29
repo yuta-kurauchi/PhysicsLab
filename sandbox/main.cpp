@@ -141,6 +141,7 @@ std::optional<std::vector<Vec2>> decideContactPoint(Edge points, Vec2& borderNor
 
 /* 応答 */
 void resolveCollision(ContactManifold& manifold);
+void resolvePenetration(ContactManifold& manifold);
 void applyImpulse(Body& body, const Vec2& impulse, const Vec2& contactArm);
 
 /* Initialize Obj */
@@ -309,6 +310,7 @@ void updatePhysics(float dt) {
 
     for (ContactManifold& manifold : manifolds) {
         resolveCollision(manifold);
+        resolvePenetration(manifold);
     }
 };
 
@@ -1015,17 +1017,22 @@ void resolveCollision(ContactManifold& manifold) {
         applyImpulse(a, Jt * -1, contactArmA);
         applyImpulse(b, Jt, contactArmB);
     }
-
-
-    // めり込み補正(質量の逆比で移動)
-    float invMassSum = a.invMass + b.invMass;
-    a.pos -= normal * penetration * a.invMass / invMassSum;
-    b.pos += normal * penetration * b.invMass / invMassSum;
 }
 
 void applyImpulse(Body& body,const Vec2& impulse, const Vec2& contactArm) {
     body.vel += impulse * body.invMass;
     body.angularVel += cross(contactArm, impulse) * body.invInertia;
+}
+
+void resolvePenetration(ContactManifold& manifold) {
+    const Vec2 normal = manifold.normalAB;
+    const float penetration = manifold.penetration;
+    Body& a = *manifold.bodyA;
+    Body& b = *manifold.bodyB;
+    // めり込み補正(質量の逆比で移動)
+    float invMassSum = a.invMass + b.invMass;
+    a.pos -= normal * penetration * a.invMass / invMassSum;
+    b.pos += normal * penetration * b.invMass / invMassSum;
 }
 
 

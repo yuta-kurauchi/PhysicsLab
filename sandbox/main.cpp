@@ -61,6 +61,20 @@ struct SATCollisionInfo {
     AxisInfo mtvAxis;
 };
 
+struct Contact {
+    Vec2 point;
+};
+
+struct ContactManifold {
+    Body* bodyA;
+    Body* bodyB;
+
+    Vec2 normalAB;
+    float penetration;
+
+    std::vector<Contact> contacts;
+};
+
 
 struct Interval {
     float min;
@@ -89,6 +103,9 @@ std::vector<Circle> circles(circleNum);
 int rectangleNum = 5;
 int triangleNum = 5;
 std::vector<Polygon> polygons;
+
+/* 衝突情報用 */
+std::vector<ContactManifold> manifolds;
 
 /* プロトタイプ宣言 */
 
@@ -123,7 +140,7 @@ std::optional<Edge> clipSegmentToLine(Edge points, const Vec2& borderNormal, con
 std::optional<std::vector<Vec2>> decideContactPoint(Edge points, Vec2& borderNormal, Vec2& borderPos);
 
 /* 応答 */
-void resolveCollision(Body& a, Body& b, const CollisionInfo& collision);
+void resolveCollision(ContactManifold& manifold);
 void applyImpulse(Body& body, const Vec2& impulse, const Vec2& contactArm);
 
 /* Initialize Obj */
@@ -264,6 +281,7 @@ int main(int argc, char* argv[]) {
 
 /* UpdatePhysics */
 void updatePhysics(float dt) {
+    manifolds.clear();
     /* 共通更新 */
     for (Circle& circle : circles) {
         updateAcc(circle.body);
@@ -288,6 +306,10 @@ void updatePhysics(float dt) {
     circleCircleCollision();
     polygonPolygonCollision(polygons);
     circlePolygonCollision(circles, polygons);
+
+    for (ContactManifold& manifold : manifolds) {
+        resolveCollision(manifold);
+    }
 };
 
 
@@ -514,7 +536,21 @@ void circleCircleCollision() {
             // 衝突なし
             if (!collision) continue;
 
-            resolveCollision(a.body, b.body, *collision);
+            std::vector<Contact> cPoints;
+            for (const Vec2& pos : (*collision).contactPoints) {
+                Contact contact{ pos };
+                cPoints.push_back(contact);
+            }
+
+            ContactManifold ccManifold{
+                &a.body,
+                &b.body,
+                (*collision).normalAB,
+                (*collision).penetration,
+                cPoints
+            };
+
+            manifolds.push_back(ccManifold);
         }
     }
 }
@@ -557,8 +593,21 @@ void polygonPolygonCollision(std::vector<Polygon>& polygons) {
 
             if (!collision) continue;
 
-            // resolve
-            resolveCollision(a.body, b.body, *collision);
+            std::vector<Contact> cPoints;
+            for (const Vec2& pos : (*collision).contactPoints) {
+                Contact contact{ pos };
+                cPoints.push_back(contact);
+            }
+
+            ContactManifold ppManifold{
+                &a.body,
+                &b.body,
+                (*collision).normalAB,
+                (*collision).penetration,
+                cPoints
+            };
+
+            manifolds.push_back(ppManifold);
         }
     }
 }
@@ -579,8 +628,21 @@ void circlePolygonCollision(std::vector<Circle>& circles, std::vector<Polygon>& 
             std::vector<Vec2> contactPoints = { contactPoint };
             CollisionInfo collision{ (*satCollision).penetration, (*satCollision).normalAB, contactPoints };
 
-            // resolve
-            resolveCollision(a.body, b.body, collision);
+            std::vector<Contact> cPoints;
+            for (const Vec2& pos : collision.contactPoints) {
+                Contact contact{ pos };
+                cPoints.push_back(contact);
+            }
+
+            ContactManifold cpManifold{
+                &a.body,
+                &b.body,
+                collision.normalAB,
+                collision.penetration,
+                cPoints
+            };
+
+            manifolds.push_back(cpManifold);
         }
     }
 }
@@ -891,11 +953,13 @@ std::optional<std::vector<Vec2>> decideContactPoint(Edge points, Vec2& borderNor
 
 
 /* 共通応答 */
-void resolveCollision(Body& a, Body& b, const CollisionInfo& collision) {
-    const Vec2 contactPoint = collision.contactPoints[0]; // 現状一点応答
-    const Vec2 normal = collision.normalAB;
+void resolveCollision(ContactManifold& manifold) {
+    const Vec2 contactPoint = manifold.contacts[0].point; // 現状一点応答
+    const Vec2 normal = manifold.normalAB;
     const Vec2 tangent = normal.perpendicular();
-    const float penetration = collision.penetration;
+    const float penetration = manifold.penetration;
+    Body& a = *manifold.bodyA;
+    Body& b = *manifold.bodyB;
 
     // 重心から接触点へのベクトル
     Vec2 contactArmA = contactPoint - a.pos;
@@ -1099,7 +1163,7 @@ void render(SDL_Renderer* renderer) {
             line.p2.x, line.p2.y
         );
     }
-    SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255); // 緑
+    SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255); // 白
     for (const Vec2& point : debugPoints) {
         SDL_FRect rect;
         float point_size = 10.0f; // 点の大きさ

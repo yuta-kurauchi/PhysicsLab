@@ -64,6 +64,7 @@ struct SATCollisionInfo {
 struct Contact {
     Vec2 point;
     float JnAccumulator = 0.0f;
+    float targetVel = 0.0f;
 };
 
 struct ContactManifold {
@@ -171,7 +172,7 @@ std::vector<ContactManifold> manifolds;
 const double PI = std::acos(-1.0);
 const float GRAVITY = 98.0f;
 const float WALLRESTITUTION = 0.0f;
-const float OBJRESTITUTION = 0.0f;
+const float OBJRESTITUTION = 0.5;
 const float WALLKINETICMU = 0.0f;
 const float OBJMU = 0.5f;
 const float INF = std::numeric_limits<float>::infinity();
@@ -315,10 +316,36 @@ void updatePhysics(float dt) {
     polygonPolygonCollision(polygons);
     circlePolygonCollision(circles, polygons);
 
+    // ここにあるの邪魔かも。場所考えるべき
+    for (ContactManifold& manifold : manifolds) {
+        for (Contact& contact : manifold.contacts) {
+            const Vec2 contactPoint = contact.point;
+            const Vec2 normal = manifold.normalAB;
+            Body& a = *manifold.bodyA;
+            Body& b = *manifold.bodyB;
+
+            // 重心から接触点へのベクトル
+            Vec2 contactArmA = contactPoint - a.pos;
+            Vec2 contactArmB = contactPoint - b.pos;
+
+            Vec2 contactVelA = getContactVelocity(a, contactArmA);
+            Vec2 contactVelB = getContactVelocity(b, contactArmB);
+
+            Vec2 relativeVel = contactVelB - contactVelA;
+            float vnInit = dot(relativeVel, normal);
+
+            if (vnInit < 0) {
+                contact.targetVel = -OBJRESTITUTION * vnInit;
+            } else {
+                contact.targetVel = vnInit;
+            }
+        }
+    }
+
     for (int i = 0; i < solverIterations; ++i) {
-        for (ContactManifold& manifold : manifolds) {
+        for (ContactManifold& manifold : manifolds) { 
             int contactNum = 0;
-            for (Contact& contact : manifold.contacts) {
+            for (Contact& contact : manifold.contacts) { 
                 resolveCollision(manifold, contact);
                 contactNum++;
             }
@@ -972,11 +999,12 @@ std::optional<std::vector<Vec2>> decideContactPoint(Edge points, Vec2& borderNor
 
 /* 共通応答 */
 void resolveCollision(ContactManifold& manifold, Contact& contact) {
-    const Vec2 contactPoint = contact.point; // 現状一点応答
+    const Vec2 contactPoint = contact.point;
     const float oldAccumJnScalar = contact.JnAccumulator;
     const Vec2 normal = manifold.normalAB;
     const Vec2 tangent = normal.perpendicular();
     const float penetration = manifold.penetration;
+    const float targetVel = contact.targetVel;
     Body& a = *manifold.bodyA;
     Body& b = *manifold.bodyB;
 
@@ -992,7 +1020,6 @@ void resolveCollision(ContactManifold& manifold, Contact& contact) {
     Vec2 relativeVel = contactVelB - contactVelA;
     float vn = dot(relativeVel, normal);
 
-
     // 有効質量
     float rnA = cross(contactArmA, normal);
     float rnB = cross(contactArmB, normal);
@@ -1002,7 +1029,7 @@ void resolveCollision(ContactManifold& manifold, Contact& contact) {
         + rnB * rnB * b.invInertia;
 
     // 法線力積
-    float deltaJnScalar = -(1 + OBJRESTITUTION) * vn / effectiveMassNormal;
+    float deltaJnScalar = -(vn - targetVel) / effectiveMassNormal;
 
     // 累積
     contact.JnAccumulator += deltaJnScalar;

@@ -64,6 +64,7 @@ struct SATCollisionInfo {
 struct Contact {
     Vec2 point;
     float JnAccumulator = 0.0f;
+    float JtAccumulator = 0.0f;
     float targetVel = 0.0f;
 };
 
@@ -161,7 +162,7 @@ const int solverIterations = 10;
 // Obj用
 int circleNum = 0;
 std::vector<Circle> circles(circleNum);
-int rectangleNum = 2;
+int rectangleNum = 5;
 int triangleNum = 0;
 std::vector<Polygon> polygons;
 
@@ -346,6 +347,8 @@ void updatePhysics(float dt) {
         for (ContactManifold& manifold : manifolds) { 
             int contactNum = 0;
             for (Contact& contact : manifold.contacts) { 
+                std::cout << "iteNum = " << i << "\n";
+                std::cout << "  contactNum = " << contactNum << "\n";
                 resolveCollision(manifold, contact);
                 contactNum++;
             }
@@ -1001,9 +1004,9 @@ std::optional<std::vector<Vec2>> decideContactPoint(Edge points, Vec2& borderNor
 void resolveCollision(ContactManifold& manifold, Contact& contact) {
     const Vec2 contactPoint = contact.point;
     const float oldAccumJnScalar = contact.JnAccumulator;
+    const float oldAccumJtScalar = contact.JtAccumulator;
     const Vec2 normal = manifold.normalAB;
     const Vec2 tangent = normal.perpendicular();
-    const float penetration = manifold.penetration;
     const float targetVel = contact.targetVel;
     Body& a = *manifold.bodyA;
     Body& b = *manifold.bodyB;
@@ -1050,31 +1053,61 @@ void resolveCollision(ContactManifold& manifold, Contact& contact) {
     applyImpulse(a, Jn * -1, contactArmA);
     applyImpulse(b, Jn, contactArmB);
 
-    // 摩擦は一旦なしで、確認する。
+    std::cout << "      vA_bef = (" << a.vel.x << ", " << a.vel.y << ")\n";
+    std::cout << "      vB_bef = (" << b.vel.x << ", " << b.vel.y << ")\n";
 
-    // // 反映した後なので再計算
-    // Vec2 contactVelA = getContactVelocity(a, contactArmA);
-    // Vec2 contactVelB = getContactVelocity(b, contactArmB);
-    // Vec2 relativeVel = contactVelB - contactVelA;
 
-    // float vt = dot(relativeVel, tangent);
+    // 反映した後なので再計算
+    contactVelA = getContactVelocity(a, contactArmA);
+    contactVelB = getContactVelocity(b, contactArmB);
+    relativeVel = contactVelB - contactVelA;
 
-    // float rtA = cross(contactArmA, tangent);
-    // float rtB = cross(contactArmB, tangent);
-    // float effectiveMassTangent =
-    //     a.invMass + b.invMass
-    //     + rtA * rtA * a.invInertia
-    //     + rtB * rtB * b.invInertia;
+    float vt = dot(relativeVel, tangent);
+
+    std::cout << "      vt_bef = " << vt << "\n";
+
+    float rtA = cross(contactArmA, tangent);
+    float rtB = cross(contactArmB, tangent);
+    float effectiveMassTangent =
+        a.invMass + b.invMass
+        + rtA * rtA * a.invInertia
+        + rtB * rtB * b.invInertia;
 
     // float tangentImpulseScalar = -vt / effectiveMassTangent;
-    // // maxFriction = μ Jn
-    // float maxFrictionImpulseScalar = OBJMU * normalImpulseScalar;
-    // float frictionImpulseScalar = clamp(tangentImpulseScalar, -maxFrictionImpulseScalar, maxFrictionImpulseScalar);
+    float deltaJtScalar = -vt / effectiveMassTangent;
 
-    // Vec2 Jt = tangent * frictionImpulseScalar;
-    // // A: -Jt, B: Jt
-    // applyImpulse(a, Jt * -1, contactArmA);
-    // applyImpulse(b, Jt, contactArmB);
+    // 累積
+    contact.JtAccumulator += deltaJtScalar;
+
+    // maxFriction = μ accJn
+    float maxFrictionImpulseScalar = OBJMU * contact.JnAccumulator;
+    float newAccumJtScalar = clamp(contact.JtAccumulator, -maxFrictionImpulseScalar, maxFrictionImpulseScalar);
+    // 更新
+    contact.JtAccumulator = newAccumJtScalar;
+
+    float frictionImpulseScalar = newAccumJtScalar - oldAccumJtScalar;
+
+    Vec2 Jt = tangent * frictionImpulseScalar;
+    // A: -Jt, B: Jt
+    applyImpulse(a, Jt * -1, contactArmA);
+    applyImpulse(b, Jt, contactArmB);
+
+    std::cout << "      deltaJt = " << deltaJtScalar << "\n";
+    std::cout << "      frictionImpulse = " << frictionImpulseScalar << "\n";
+    std::cout << "      maxFriction = " << maxFrictionImpulseScalar << "\n";
+    std::cout << "      oldAccumJt = " << oldAccumJtScalar << "\n";
+    std::cout << "      newAccumJt = " << newAccumJtScalar << "\n";
+    std::cout << "      Jt = ( " << Jt.x << ", " << Jt.y << ")\n";
+    std::cout << "      vA_aft = (" << a.vel.x << ", " << a.vel.y << ")\n";
+    std::cout << "      vB_aft = (" << b.vel.x << ", " << b.vel.y << ")\n";
+
+    contactVelA = getContactVelocity(a, contactArmA);
+    contactVelB = getContactVelocity(b, contactArmB);
+    relativeVel = contactVelB - contactVelA;
+
+    vt = dot(relativeVel, tangent);
+    std::cout << "      vt_aft = " << vt << "\n";
+    std::cout << "      vn = " << vn << "\n"; 
 }
 
 void applyImpulse(Body& body,const Vec2& impulse, const Vec2& contactArm) {

@@ -160,10 +160,10 @@ float clamp(const float value, const float min, const float max);
 const int solverIterations = 10;
 
 // Obj用
-int circleNum = 5;
+int circleNum = 3;
 std::vector<Circle> circles(circleNum);
-int rectangleNum = 5;
-int triangleNum = 5;
+int rectangleNum = 3;
+int triangleNum = 2;
 std::vector<Polygon> polygons;
 
 // 衝突情報用
@@ -172,11 +172,11 @@ std::vector<ContactManifold> manifolds;
 /* 定数 */
 const double PI = std::acos(-1.0);
 const float GRAVITY = 98.0f;
-const float WALLRESTITUTION = 0.8f;
-const float OBJRESTITUTION = 0.8;
+const float WALLRESTITUTION = 0.0f;
+const float OBJRESTITUTION = 0.5;
 const float WALLKINETICMU = 0.5f;
 const float OBJMU = 0.5f;
-const float RESTITUTIONTHRESHOLD = 10.0f;
+const float RESTITUTIONTHRESHOLD = 10.0f; // 暫定(要検証)
 const float INF = std::numeric_limits<float>::infinity();
 
 // WindowSize
@@ -347,10 +347,8 @@ void updatePhysics(float dt) {
 
     for (int i = 0; i < solverIterations; ++i) {
         for (ContactManifold& manifold : manifolds) { 
-            int contactNum = 0;
             for (Contact& contact : manifold.contacts) {
                 resolveCollision(manifold, contact);
-                contactNum++;
             }
         }
     }
@@ -636,7 +634,6 @@ void polygonPolygonCollision(std::vector<Polygon>& polygons) {
             if (!satCollision) continue;
 
             // contactPoint取得
-            // 現状、2点接触の場合は中点を1接触点として扱う
             const auto collision = generateCollisionInfo(a, b, *satCollision);
 
             if (!collision) continue;
@@ -1067,7 +1064,6 @@ void resolveCollision(ContactManifold& manifold, Contact& contact) {
         + rtA * rtA * a.invInertia
         + rtB * rtB * b.invInertia;
 
-    // float tangentImpulseScalar = -vt / effectiveMassTangent;
     float deltaJtScalar = -vt / effectiveMassTangent;
 
     // 累積

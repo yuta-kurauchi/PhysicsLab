@@ -160,10 +160,10 @@ float clamp(const float value, const float min, const float max);
 const int solverIterations = 10;
 
 // Obj用
-int circleNum = 0;
+int circleNum = 5;
 std::vector<Circle> circles(circleNum);
 int rectangleNum = 5;
-int triangleNum = 0;
+int triangleNum = 5;
 std::vector<Polygon> polygons;
 
 // 衝突情報用
@@ -172,10 +172,11 @@ std::vector<ContactManifold> manifolds;
 /* 定数 */
 const double PI = std::acos(-1.0);
 const float GRAVITY = 98.0f;
-const float WALLRESTITUTION = 0.0f;
-const float OBJRESTITUTION = 0.5;
-const float WALLKINETICMU = 0.0f;
+const float WALLRESTITUTION = 0.8f;
+const float OBJRESTITUTION = 0.8;
+const float WALLKINETICMU = 0.5f;
 const float OBJMU = 0.5f;
+const float RESTITUTIONTHRESHOLD = 10.0f;
 const float INF = std::numeric_limits<float>::infinity();
 
 // WindowSize
@@ -335,10 +336,11 @@ void updatePhysics(float dt) {
             Vec2 relativeVel = contactVelB - contactVelA;
             float vnInit = dot(relativeVel, normal);
 
-            if (vnInit < 0) {
+            contact.targetVel = 0.0f;
+
+            // 衝突
+            if (vnInit < -RESTITUTIONTHRESHOLD) {
                 contact.targetVel = -OBJRESTITUTION * vnInit;
-            } else {
-                contact.targetVel = vnInit;
             }
         }
     }
@@ -346,9 +348,7 @@ void updatePhysics(float dt) {
     for (int i = 0; i < solverIterations; ++i) {
         for (ContactManifold& manifold : manifolds) { 
             int contactNum = 0;
-            for (Contact& contact : manifold.contacts) { 
-                std::cout << "iteNum = " << i << "\n";
-                std::cout << "  contactNum = " << contactNum << "\n";
+            for (Contact& contact : manifold.contacts) {
                 resolveCollision(manifold, contact);
                 contactNum++;
             }
@@ -1011,7 +1011,6 @@ void resolveCollision(ContactManifold& manifold, Contact& contact) {
     Body& a = *manifold.bodyA;
     Body& b = *manifold.bodyB;
 
-    // 以下はiteration中に再計算されるべき
 
     // 重心から接触点へのベクトル
     Vec2 contactArmA = contactPoint - a.pos;
@@ -1053,9 +1052,6 @@ void resolveCollision(ContactManifold& manifold, Contact& contact) {
     applyImpulse(a, Jn * -1, contactArmA);
     applyImpulse(b, Jn, contactArmB);
 
-    std::cout << "      vA_bef = (" << a.vel.x << ", " << a.vel.y << ")\n";
-    std::cout << "      vB_bef = (" << b.vel.x << ", " << b.vel.y << ")\n";
-
 
     // 反映した後なので再計算
     contactVelA = getContactVelocity(a, contactArmA);
@@ -1063,8 +1059,6 @@ void resolveCollision(ContactManifold& manifold, Contact& contact) {
     relativeVel = contactVelB - contactVelA;
 
     float vt = dot(relativeVel, tangent);
-
-    std::cout << "      vt_bef = " << vt << "\n";
 
     float rtA = cross(contactArmA, tangent);
     float rtB = cross(contactArmB, tangent);
@@ -1091,23 +1085,6 @@ void resolveCollision(ContactManifold& manifold, Contact& contact) {
     // A: -Jt, B: Jt
     applyImpulse(a, Jt * -1, contactArmA);
     applyImpulse(b, Jt, contactArmB);
-
-    std::cout << "      deltaJt = " << deltaJtScalar << "\n";
-    std::cout << "      frictionImpulse = " << frictionImpulseScalar << "\n";
-    std::cout << "      maxFriction = " << maxFrictionImpulseScalar << "\n";
-    std::cout << "      oldAccumJt = " << oldAccumJtScalar << "\n";
-    std::cout << "      newAccumJt = " << newAccumJtScalar << "\n";
-    std::cout << "      Jt = ( " << Jt.x << ", " << Jt.y << ")\n";
-    std::cout << "      vA_aft = (" << a.vel.x << ", " << a.vel.y << ")\n";
-    std::cout << "      vB_aft = (" << b.vel.x << ", " << b.vel.y << ")\n";
-
-    contactVelA = getContactVelocity(a, contactArmA);
-    contactVelB = getContactVelocity(b, contactArmB);
-    relativeVel = contactVelB - contactVelA;
-
-    vt = dot(relativeVel, tangent);
-    std::cout << "      vt_aft = " << vt << "\n";
-    std::cout << "      vn = " << vn << "\n"; 
 }
 
 void applyImpulse(Body& body,const Vec2& impulse, const Vec2& contactArm) {
@@ -1174,15 +1151,15 @@ void InitializeObj() {
     for (int i = 0; i < rectangleNum; ++i) {
         Polygon rectangle;
         Body& body = rectangle.body;
-        float w = 50.0f; // length(gen)
-        float h = 20.0f; // length(gen)
+        float w = length(gen);
+        float h = length(gen);
         // 面積に比例
         body.mass = minMass + (maxMass - minMass) * ((w * h) / (maxLength * maxLength));
         body.invMass = 1.0f / body.mass;
 
-        body.pos = Vec2(100.0f, 100.0f + (i * 100.0f)); // Vec2(posX(gen), posY(gen))
+        body.pos = Vec2(posX(gen), posY(gen));
 
-        body.vel = Vec2(0.0f, 0.0f); // Vec2(velocity(gen), velocity(gen))
+        body.vel = Vec2(velocity(gen), velocity(gen));
 
         // 頂点(反時計回り)
         rectangle.localVertices.resize(4);
@@ -1191,7 +1168,7 @@ void InitializeObj() {
         rectangle.localVertices[2] = Vec2(w / 2.0f, h / 2.0f);
         rectangle.localVertices[3] = Vec2(w / 2.0f, -h / 2.0f);
 
-        body.angle = 0.0f; // angle(gen)
+        body.angle = angle(gen);
         body.angularVel = 0.0f;
 
         body.inertia = body.mass * (w * w + h * h) / 12.0f; // I_z = m (w^2 + h^2) / 12

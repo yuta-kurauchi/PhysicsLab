@@ -12,17 +12,22 @@
 
 /* 設定 */
 
+int circleNum = 3;
+int rectangleNum = 3;
+int triangleNum = 2;
+
 // 処理用
 const int solverIterations = 10;
 
 /* 定数 */
 const double PI = std::acos(-1.0);
 const float GRAVITY = 98.0f;
-const float WALLRESTITUTION = 0.0f;
+const float WALLRESTITUTION = 0.5f;
 const float OBJRESTITUTION = 0.5;
 const float WALLKINETICMU = 0.5f;
 const float OBJMU = 0.5f;
 const float RESTITUTIONTHRESHOLD = 10.0f; // 暫定(要検証)
+const float EPSILON = 2.0f; // 暫定 (若干浮いて止まっているように見えるので要検討)
 const float INF = std::numeric_limits<float>::infinity();
 
 // WindowSize
@@ -75,7 +80,7 @@ struct AxisInfo {
 struct CollisionInfo {
     float penetration;
     Vec2 normalAB; // 衝突法線: 物理処理の都合から、ABに統一して管理
-    std::vector<Vec2> contactPoints; // 接触点のワールド座標(いずれベクトルに変更,とりま1点のみ保持)
+    std::vector<Vec2> contactPoints;
 };
 
 struct SATCollisionInfo {
@@ -151,7 +156,6 @@ void updateAngle(Body& body, float dt);
 /* Collision */
 void circleWallCollision(Circle& cirlce);
 void polygonWallCollision(std::vector<Polygon>& polygons);
-void resolveWallCollision(Body& body, const CollisionInfo& collision);
 void circleCircleCollision();
 std::optional<CollisionInfo> detectCircleCircleCollision(const Circle& a, const Circle&b);
 void polygonPolygonCollision(std::vector<Polygon>& polygons);
@@ -192,10 +196,7 @@ float clamp(const float value, const float min, const float max);
 
 
 // Obj用
-int circleNum = 1; // 3
 std::vector<Circle> circles(circleNum);
-int rectangleNum = 0; // 3
-int triangleNum = 0; // 2
 std::vector<Polygon> polygons;
 Body wall{};
 
@@ -365,9 +366,8 @@ void updatePhysics(float dt) {
 
     /* Solver */
     for (int i = 0; i < solverIterations; ++i) {
-        for (ContactManifold& manifold : manifolds) { 
+        for (ContactManifold& manifold : manifolds) {
             for (Contact& contact : manifold.contacts) {
-                std::cout << "iteNum = " << i << "\n";
                 resolveCollision(manifold, contact);
             }
         }
@@ -485,137 +485,113 @@ void polygonWallCollision(std::vector<Polygon>& polygons) {
         std::vector<Vec2> vertices = getVerticesPos(polygon);
 
         // 一番壁に近い頂点の座標を取得
-        // 2点接触は考慮していない(後で実装)
         float left = INF;
         float right = -INF;
         float top = INF;
         float bottom = -INF;
-        Vec2 cLeft, cRight, cTop, cBottom;
         for (Vec2& vertex : vertices) {
             float x = vertex.x;
             float y = vertex.y;
-            if (x < left) {
-                left = x;
-                cLeft = vertex;
+            if (x < left) left = x;
+            if (x > right) right = x;
+            if (y < top) top = y;
+            if (y > bottom) bottom = y;
+        }
+
+        // ほぼ平行の場合は2点格納
+        std::vector<Vec2> cLefts, cRights, cTops, cBottoms;
+        for (Vec2& vertex : vertices) {
+            float x = vertex.x;
+            float y = vertex.y;
+            if (abs(left - x) < EPSILON) {
+                cLefts.push_back(vertex);
             }
-            if (x > right) {
-                right = x;
-                cRight = vertex;
+            if (abs(right - x) < EPSILON) {
+                cRights.push_back(vertex);
             }
-            if (y < top) {
-                top = y;
-                cTop = vertex;
+            if (abs(top - y) < EPSILON) {
+                cTops.push_back(vertex);
             }
-            if (y > bottom) {
-                bottom = y;
-                cBottom = vertex;
+            if (abs(bottom - y) < EPSILON) {
+                cBottoms.push_back(vertex);
             }
         }
 
         if (left < 0.0f) {
-            // 後でcollisioninfo使う形にする。
-            // 壁をobjとして扱うようにするときにやる。
             Vec2 normal(1.0f, 0.0f);
             float penetration = -left;
-            // contactPointの作成を複数点に対応させる。
-            std::vector<Vec2> contactPoints = { cLeft };
-            CollisionInfo collision{
-                penetration,
+            std::vector<Contact> cPoints;
+            for (Vec2& contactPoint : cLefts) {
+                cPoints.push_back(Contact{ contactPoint });
+            }
+            ContactManifold pwManifold {
+                &wall,
+                &body,
                 normal,
-                contactPoints
+                penetration,
+                cPoints
             };
-            resolveWallCollision(body, collision);
+            if (!(pwManifold.bodyA->isStatic && pwManifold.bodyB->isStatic)) {
+                manifolds.push_back(pwManifold);
+            }
         }
         if (right > W) {
             Vec2 normal(-1.0f, 0.0f);
             float penetration = right - W;
-            std::vector<Vec2> contactPoints = { cRight };
-            CollisionInfo collision{
-                penetration,
+            std::vector<Contact> cPoints;
+            for (Vec2& contactPoint : cRights) {
+                cPoints.push_back(Contact{ contactPoint });
+            }
+            ContactManifold pwManifold {
+                &wall,
+                &body,
                 normal,
-                contactPoints
+                penetration,
+                cPoints
             };
-            resolveWallCollision(body, collision);
+            if (!(pwManifold.bodyA->isStatic && pwManifold.bodyB->isStatic)) {
+                manifolds.push_back(pwManifold);
+            }
         }
         if (top < 0.0f) {
             Vec2 normal(0.0f, 1.0f);
             float penetration = -top;
-            std::vector<Vec2> contactPoints = { cTop };
-            CollisionInfo collision{
-                penetration,
+            std::vector<Contact> cPoints;
+            for (Vec2& contactPoint : cTops) {
+                cPoints.push_back(Contact{ contactPoint });
+            }
+            ContactManifold pwManifold {
+                &wall,
+                &body,
                 normal,
-                contactPoints
+                penetration,
+                cPoints
             };
-            resolveWallCollision(body, collision);
+            if (!(pwManifold.bodyA->isStatic && pwManifold.bodyB->isStatic)) {
+                manifolds.push_back(pwManifold);
+            }
         }
         if (bottom > H) {
             Vec2 normal(0.0f, -1.0f);
             float penetration = bottom - H;
-            std::vector<Vec2> contactPoints = { cBottom };
-            CollisionInfo collision{
-                penetration,
+            std::vector<Contact> cPoints;
+            for (Vec2& contactPoint : cBottoms) {
+                cPoints.push_back(Contact{ contactPoint });
+            }
+            ContactManifold pwManifold {
+                &wall,
+                &body,
                 normal,
-                contactPoints
+                penetration,
+                cPoints
             };
-            resolveWallCollision(body, collision);
+            if (!(pwManifold.bodyA->isStatic && pwManifold.bodyB->isStatic)) {
+                manifolds.push_back(pwManifold);
+            }
         }
     }
 }
 
-// normalは壁のほう線を使っているので、物体はBだと考える
-void resolveWallCollision(Body& body, const CollisionInfo& collision) {
-    const float penetration = collision.penetration;
-    const Vec2& normal = collision.normalAB;
-    const Vec2& tangent = normal.perpendicular();
-    const Vec2& contactPoint = collision.contactPoints[0]; // 現状一点のみ応答
-    // 重心から接触点へのベクトル
-    Vec2 contactArmB = contactPoint - body.pos;
-
-    Vec2 contactVelB = getContactVelocity(body, contactArmB);
-
-    Vec2 relativeVel = contactVelB - Vec2(); // 壁は速度0
-    float vn = dot(relativeVel, normal);
-
-    // 近づいている場合は力積作用
-    if (vn < 0) {
-        // 有効質量
-        float rnB = cross(contactArmB, normal);
-        float effectiveMassNormal =
-            body.invMass
-            + rnB * rnB * body.invInertia;
-
-        // 法線力積
-        float normalImpulseScalar = -(1 + WALLRESTITUTION) * vn / effectiveMassNormal;
-        Vec2 Jn = normal * normalImpulseScalar;
-
-        // 力積適用
-        // A: -Jn, B: Jn
-        applyImpulse(body, Jn, contactArmB);
-
-        // 反映した後なので再計算
-        Vec2 contactVelB = getContactVelocity(body, contactArmB);
-        Vec2 relativeVel = contactVelB - Vec2();
-
-        float vt = dot(relativeVel, tangent);
-
-        float rtB = cross(contactArmB, tangent);
-        float effectiveMassTangent =
-            body.invMass
-            + rtB * rtB * body.invInertia;
-
-        float tangentImpulseScalar = -vt / effectiveMassTangent;
-        // maxFriction = μ Jn, 接触継続は考慮していない。
-        float maxFrictionImpulseScalar = WALLKINETICMU * normalImpulseScalar;
-        float frictionImpulseScalar = clamp(tangentImpulseScalar, -maxFrictionImpulseScalar, maxFrictionImpulseScalar);
-
-        Vec2 Jt = tangent * frictionImpulseScalar;
-        // A: -Jt, B: Jt
-        applyImpulse(body, Jt, contactArmB);
-    }
-    
-    // めり込み補正
-    body.pos += normal * penetration;
-}
 
 void circleCircleCollision() {
     for (int i = 0; i < circles.size(); ++i) {
@@ -1071,23 +1047,17 @@ void resolveCollision(ContactManifold& manifold, Contact& contact) {
     Vec2 relativeVel = contactVelB - contactVelA;
     float vn = dot(relativeVel, normal);
 
-    std::cout << "  vn_bef = " << vn << "\n";
 
     // 有効質量
     float rnA = cross(contactArmA, normal);
     float rnB = cross(contactArmB, normal);
-    // std::cout << "  rnA = " << rnA << "\n";
-    // std::cout << "  invMassA = " << a.invMass << "\n";
-    // std::cout << "  invInertiaA = " << a.invInertia << "\n";
     float effectiveMassNormal =
         a.invMass + b.invMass
         + rnA * rnA * a.invInertia
         + rnB * rnB * b.invInertia;
 
-    // std::cout << "  effMassN = b.invMass + rnB * rnB * b.invInertia : " << (effectiveMassNormal == (b.invMass + rnB * rnB * b.invInertia)) << "\n";
 
     // 法線力積
-    std::cout << "  targetVel = " << targetVel << "\n";
     float deltaJnScalar = 0.0f;
     if (effectiveMassNormal != 0.0f) {
         deltaJnScalar = -(vn - targetVel) / effectiveMassNormal;
@@ -1112,21 +1082,12 @@ void resolveCollision(ContactManifold& manifold, Contact& contact) {
     applyImpulse(a, Jn * -1, contactArmA);
     applyImpulse(b, Jn, contactArmB);
 
-    std::cout << "  vx_bef = " << b.vel.x << "\n";
-    float Ene = 0.5f * b.mass * b.vel.length() * b.vel.length();
-    std::cout << "  Kn_bef = " << Ene << "\n";
-
     // 反映した後なので再計算
     contactVelA = getContactVelocity(a, contactArmA);
     contactVelB = getContactVelocity(b, contactArmB);
     relativeVel = contactVelB - contactVelA;
 
-    vn = dot(relativeVel, normal);
-    std::cout << "  vn_aft = " << vn << "\n";
-
     float vt = dot(relativeVel, tangent);
-
-    std::cout << "  vt_bef = " << vt << "\n";
 
     float rtA = cross(contactArmA, tangent);
     float rtB = cross(contactArmB, tangent);
@@ -1135,7 +1096,6 @@ void resolveCollision(ContactManifold& manifold, Contact& contact) {
         + rtA * rtA * a.invInertia
         + rtB * rtB * b.invInertia;
 
-    // std::cout << "  effMassT = b.invMass + rtB * rtB * b.invInertia : " << (effectiveMassTangent == (b.invMass + rtB * rtB * b.invInertia)) << "\n";
 
     float deltaJtScalar = 0.0f;
     if (effectiveMassTangent != 0.0f) {
@@ -1148,7 +1108,6 @@ void resolveCollision(ContactManifold& manifold, Contact& contact) {
     // maxFriction = μ accJn
     float maxFrictionImpulseScalar = manifold.getMu() * contact.JnAccumulator;
     float newAccumJtScalar = clamp(contact.JtAccumulator, -maxFrictionImpulseScalar, maxFrictionImpulseScalar);
-    std::cout << "  制限されている : " << (newAccumJtScalar != contact.JtAccumulator) << "\n";
     // 更新
     contact.JtAccumulator = newAccumJtScalar;
 
@@ -1158,16 +1117,6 @@ void resolveCollision(ContactManifold& manifold, Contact& contact) {
     // A: -Jt, B: Jt
     applyImpulse(a, Jt * -1, contactArmA);
     applyImpulse(b, Jt, contactArmB);
-
-    std::cout << "  vx_aft = " << b.vel.x << "\n";
-    Ene = 0.5f * b.mass * b.vel.length() * b.vel.length(); 
-    std::cout << "  Kn_aft = " << Ene << "\n";
-
-    contactVelA = getContactVelocity(a, contactArmA);
-    contactVelB = getContactVelocity(b, contactArmB);
-    relativeVel = contactVelB - contactVelA;
-    vt = dot(relativeVel, tangent);
-    std::cout << "  vt_aft = " << vt << "\n";
 }
 
 void applyImpulse(Body& body,const Vec2& impulse, const Vec2& contactArm) {
@@ -1255,7 +1204,6 @@ void InitializeObj() {
         rectangle.localVertices[3] = Vec2(w / 2.0f, -h / 2.0f);
 
         body.angle = angle(gen);
-        body.angularVel = 0.0f;
 
         body.inertia = body.mass * (w * w + h * h) / 12.0f; // I_z = m (w^2 + h^2) / 12
         body.invInertia = 1.0f / body.inertia;

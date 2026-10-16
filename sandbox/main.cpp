@@ -12,9 +12,10 @@
 
 /* 設定 */
 
-int circleNum = 3;
-int rectangleNum = 3;
-int triangleNum = 2;
+const int circleNum = 3;
+const int rectangleNum = 3;
+const int triangleNum = 2;
+const int STACKINGNUM = 3;
 
 // 処理用
 const int solverIterations = 10;
@@ -36,6 +37,16 @@ const float H = 600;
 // WindowMode
 const SDL_WindowFlags flags = 0; // 特に機能を持たせる必要ないので0
 
+
+enum class SceneType {
+    Random,
+    SingleBox,
+    Stacking
+};
+
+// 初期化設定
+constexpr SceneType ACTIVE_SCENE = SceneType::Random;
+constexpr unsigned int RANDOM_SEED = 12345;
 
 /* 色の管理用 */
 struct RGB {
@@ -179,7 +190,10 @@ void resolvePenetration(ContactManifold& manifold);
 void applyImpulse(Body& body, const Vec2& impulse, const Vec2& contactArm);
 
 /* Initialize Obj */
-void InitializeObj();
+void InitializeObj(SceneType scene);
+void InitializeRandomScene(unsigned int seed);
+void InitializeSingleBoxScene();
+void InitializeStackingScene();
 
 /* Render */
 void render(SDL_Renderer* renderer);
@@ -196,9 +210,9 @@ float clamp(const float value, const float min, const float max);
 
 
 // Obj用
-std::vector<Circle> circles(circleNum);
+std::vector<Circle> circles;
 std::vector<Polygon> polygons;
-Body wall{};
+Body wall;
 
 // 衝突情報用
 std::vector<ContactManifold> manifolds;
@@ -253,7 +267,7 @@ int main(int argc, char* argv[]) {
     };
 
     /* Objの初期化 */
-    InitializeObj();
+    InitializeObj(ACTIVE_SCENE);
 
 
     /* MainLoop */
@@ -1141,11 +1155,38 @@ void resolvePenetration(ContactManifold& manifold) {
 
 
 /* Initialize Obj */
-void InitializeObj() {
+
+void InitializeObj(SceneType scene) {
     polygons.clear();
+    circles.clear();
+    manifolds.clear();
+
+    switch (scene) {
+        case SceneType::Random:
+            InitializeRandomScene(RANDOM_SEED);
+            break;
+        
+        case SceneType::SingleBox:
+            InitializeSingleBoxScene();
+            break;
+
+        case SceneType::Stacking:
+            InitializeStackingScene();
+            break;
+    }
+
+    // Wall
+    // invMass, invInertiaはデフォルトで0になる。
+    wall = Body{};
+    wall.isStatic = true;
+}
+
+void InitializeRandomScene(unsigned int seed) {
+    circles.reserve(circleNum);
     polygons.reserve(rectangleNum + triangleNum);
 
-    std::mt19937 gen(std::random_device{}());
+    // seed = std::random_device{}() で今まで通りランダムにできる。
+    std::mt19937 gen(seed);
 
     const float minRadius = 10.0f;
     const float maxRadius = 50.0f;
@@ -1164,7 +1205,8 @@ void InitializeObj() {
 
     
     // circle
-    for (Circle& circle : circles) {
+    for (int i = 0; i < circleNum; ++i) {
+        Circle circle;
         Body& body = circle.body;
         circle.radius = radius(gen);
         // 面積に比例
@@ -1180,6 +1222,8 @@ void InitializeObj() {
 
         body.inertia = body.mass * circle.radius * circle.radius * 0.5f; // I_z = m r^2 / 2
         body.invInertia = 1.0f / body.inertia;
+
+        circles.push_back(circle);
     }
 
     // rectangle
@@ -1245,10 +1289,65 @@ void InitializeObj() {
 
         polygons.push_back(triangle);
     }
+}
 
-    // Wall
-    // invMass, invInertiaはデフォルトで0になる。
-    wall.isStatic = true;
+void InitializeSingleBoxScene() {
+    polygons.reserve(1);
+    Polygon rectangle;
+    Body& body = rectangle.body;
+    float w = 80.0f;
+    float h = 60.0f;
+    // 面積に比例
+    body.mass = 0.5f + 2.5f * ((w * h) / 6400.0f);
+    body.invMass = 1.0f / body.mass;
+
+    body.pos = Vec2(W / 2.0f, H / 2.0f);
+
+    // 頂点(反時計回り)
+    rectangle.localVertices.resize(4);
+    rectangle.localVertices[0] = Vec2(-w / 2.0f, -h / 2.0f);
+    rectangle.localVertices[1] = Vec2(-w / 2.0f, h / 2.0f);
+    rectangle.localVertices[2] = Vec2(w / 2.0f, h / 2.0f);
+    rectangle.localVertices[3] = Vec2(w / 2.0f, -h / 2.0f);
+
+    body.inertia = body.mass * (w * w + h * h) / 12.0f; // I_z = m (w^2 + h^2) / 12
+    body.invInertia = 1.0f / body.inertia;
+
+    // 緑
+    rectangle.rgb.g = 1.0f;
+
+    polygons.push_back(rectangle);
+}
+
+void InitializeStackingScene() {
+    const float delta = 20.0f; // 矩形の間隔
+    polygons.reserve(STACKINGNUM);
+    for (int i = 0; i < STACKINGNUM; ++i) {
+        Polygon rectangle;
+        Body& body = rectangle.body;
+        float w = 80.0f;
+        float h = 60.0f;
+        // 面積に比例
+        body.mass = 0.5f + 2.5f * ((w * h) / 6400.0f);
+        body.invMass = 1.0f / body.mass;
+
+        body.pos = Vec2(W / 2.0f, H -  (i + 1) * (h + delta));
+
+        // 頂点(反時計回り)
+        rectangle.localVertices.resize(4);
+        rectangle.localVertices[0] = Vec2(-w / 2.0f, -h / 2.0f);
+        rectangle.localVertices[1] = Vec2(-w / 2.0f, h / 2.0f);
+        rectangle.localVertices[2] = Vec2(w / 2.0f, h / 2.0f);
+        rectangle.localVertices[3] = Vec2(w / 2.0f, -h / 2.0f);
+
+        body.inertia = body.mass * (w * w + h * h) / 12.0f; // I_z = m (w^2 + h^2) / 12
+        body.invInertia = 1.0f / body.inertia;
+
+        // 緑
+        rectangle.rgb.g = 1.0f;
+
+        polygons.push_back(rectangle);
+    }
 }
 
 

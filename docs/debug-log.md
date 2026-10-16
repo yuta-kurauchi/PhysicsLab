@@ -869,3 +869,102 @@ if (vnInit < -RESTITUTIONTHRESHOLD) {
 これまでに検証した複数接触点、累積法線力積、累積摩擦力積、反発目標速度方式と合わせ、Phase 5の主要機能の実装・基本検証を完了とする。
 
 長時間の静止接触および積み重ねの安定性はPhase 6で検証する。
+
+---
+
+## Phase 6：Circle–Wallの共通Contact Solver化
+
+### 目的
+
+従来は壁衝突を専用の`resolveWallCollision()`で処理していたが、Circle–Wallについて既存のSequential Impulse Solverへ統合した。
+
+静的Bodyを導入し、動的Circleとの衝突を通常のContactManifoldで扱えることを確認する。
+
+### 実装内容
+
+- `Body`に`isStatic`を追加し、静的Bodyの逆質量・逆慣性を0とした。
+- 静的Bodyを重力・速度・位置・角度の更新対象から除外した。
+- Circle–Wallの接触情報を、WallをBody A、CircleをBody BとしてContactManifoldへ格納するよう変更した。
+- 接触法線をWallからCircleへ向かう方向に統一した。
+- Manifoldのgetterを使い、静的Bodyを含む接触では壁用の反発係数・摩擦係数を選択するよう変更した。
+- 静的Body同士のManifoldを登録しない処理を追加した。
+- 法線・接線方向の有効質量、および位置補正におけるゼロ除算対策を追加した。
+- Circle–Wallでは旧`resolveWallCollision()`を使用せず、共通Solverで応答するよう変更した。
+
+### 検証条件
+
+- 対象：動的Circle 1個と静的床
+- 重力：98.0
+- 固定時間刻み：1/60秒
+- Solver Iterations：10
+- 反発係数：検証時の初期ログでは0.5（修正前はOBJRESTITUTIONを使用）
+- 摩擦係数：0.5
+- Restitution Threshold：10.0
+
+### 検証1：静的Bodyとの法線応答
+
+共通Solverへの移行直後、Circleの床衝突を2回記録した。
+
+初回のログ：
+
+```text
+vn_before = -309.19
+targetVel = 154.595
+vn_after = 154.595
+```
+
+2回目のログ：
+
+```text
+vn_before = -154.105
+targetVel = 77.0523
+vn_after = 77.0523
+```
+
+いずれも`e = 0.5`に対応する目標速度へ到達した。
+
+また、静的Body側の逆質量・逆慣性はともに0であり、法線方向の有効質量には動的Circle側の寄与のみが残ることを確認した。
+
+iteration 0で目標速度へ到達した後、残りのiterationでは法線速度が維持され、反発が繰り返し増幅される挙動は見られなかった。
+
+なお、このログの時点では壁用の反発係数ではなく物体用の反発係数が適用されていたため、その後Manifoldのgetterによる選択方式に修正した。
+
+### 検証2：床上での転がり挙動
+
+Circleが床と接触した後、横方向の移動が継続する現象を確認した。
+
+代表ログ：
+
+```text
+vn_before = -1.63333
+targetVel = 0
+vn_after = 0
+
+vx_before = 36.1311
+vt_before = 0
+friction_clamped = false
+vx_after = 36.1311
+vt_after = 0
+```
+
+この状態では、接触点の接線方向相対速度`vt`が既に0であるため、摩擦Solverによる追加の接線方向速度補正は不要となる。
+
+円の中心速度が0でなくても、回転によって接触点速度が打ち消されれば、滑らずに転がる状態となる。
+
+したがって、横方向の移動が継続することは現在の物理モデルと整合している。
+
+現状のCoulomb摩擦Solverは接触点の滑りを抑えるものであり、純粋転がり自体を減速させる転がり抵抗は実装していない。
+
+今回の現象はSolverの不具合とは判断せず、転がり抵抗は将来の追加機能として扱う。
+
+### 結果と今後の課題
+
+Circle–Wallについて、静的Bodyを含むContactManifoldの生成と、共通Sequential Impulse Solverによる応答を実装した。
+
+数値ログでは、法線速度が目標速度へ到達し、iterationの増加によって過剰な反発が発生しないことを確認した。
+
+また、静的Body同士の除外、ゼロ除算対策、壁用物理パラメータの選択をコード上で追加した。
+
+ただし、修正後の壁用反発係数を使った数値比較や長時間の静止安定性は今回のログでは評価していない。
+
+次はPolygon–Wallを共通Manifoldへ接続し、床との辺接触を2点Contactとして扱う。その後、位置補正の安定化と静止接触・積み重ねの検証を行う。

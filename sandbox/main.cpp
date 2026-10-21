@@ -18,7 +18,7 @@ const int triangleNum = 2;
 const int STACKINGNUM = 3;
 
 // 処理用
-const int solverIterations = 10;
+const int solverIterations = 15;
 
 /* 定数 */
 const double PI = std::acos(-1.0);
@@ -210,6 +210,9 @@ Vec2 getContactVelocity(const Body& body, const Vec2& contactArm);
 Vec2 rotate(const Vec2& v, float angle);
 float clamp(const float value, const float min, const float max);
 
+/* debug */
+void numcheck(const Body& body);
+
 
 // Obj用
 std::vector<Circle> circles;
@@ -392,8 +395,36 @@ void updatePhysics(float dt) {
     for (ContactManifold& manifold : manifolds) {
         resolvePenetration(manifold);
     }
+
+    for (const Polygon& poly : polygons) {
+        const Body& body = poly.body;
+        numcheck(body);
+    }
+    for (const Circle& cir : circles) {
+        const Body& body = cir.body;
+        numcheck(body);
+    }
+
 };
 
+void numcheck(const Body& body) {
+    if (
+        std::isfinite(body.pos.x) &&
+        std::isfinite(body.pos.y) &&
+        std::isfinite(body.vel.x) &&
+        std::isfinite(body.vel.y) &&
+        std::isfinite(body.acc.x) &&
+        std::isfinite(body.acc.y) &&
+        std::isfinite(body.angle) &&
+        std::isfinite(body.angularVel) &&
+        std::isfinite(body.invMass) &&
+        std::isfinite(body.invInertia)
+    ) {
+        return;
+    } else {
+        std::cout << "NaN or INF があります。\n";
+    }
+}
 
 /* 加速度・速度・位置・角度更新 */
 void updateAcc(Body& body) {

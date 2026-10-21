@@ -8,6 +8,7 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 #include "math/Vec2.hpp"
+#include "physics2d/PhysicsTypes.hpp"
 
 
 /* 設定 */
@@ -50,100 +51,6 @@ enum class SceneType {
 constexpr SceneType ACTIVE_SCENE = SceneType::Random;
 constexpr unsigned int RANDOM_SEED = 12345;
 
-/* 色の管理用 */
-struct RGB {
-    float r;
-    float g;
-    float b;
-};
-
-/* Obj用の構造体 */
-
-struct Body {
-    Vec2 pos{}; // 重心を示す
-    Vec2 vel{};
-    Vec2 acc{};
-    float mass = 0.0f;
-    float invMass = 0.0f;
-    float angle = 0.0f; // 時計回りが正, rad
-    float angularVel = 0.0f; // rad/s
-    float inertia = 0.0f;
-    float invInertia = 0.0f;
-    bool isStatic = false; // 静的オブジェクトを作りたい時だけ、trueにする
-};
-
-struct Circle {
-    Body body;
-    float radius = 0.0f;
-};
-
-struct Polygon {
-    Body body;
-    std::vector<Vec2> localVertices;
-    RGB rgb{0.0f, 0.0f, 0.0f};
-};
-
-struct AxisInfo {
-    Vec2 candidateAxis;
-    char whichObj;
-    int edgeNum;
-};
-
-/* CollisionInfo */
-struct CollisionInfo {
-    float penetration;
-    Vec2 normalAB; // 衝突法線: 物理処理の都合から、ABに統一して管理
-    std::vector<Vec2> contactPoints;
-};
-
-struct SATCollisionInfo {
-    float penetration;
-    Vec2 normalAB;
-    AxisInfo mtvAxis;
-};
-
-struct Contact {
-    Vec2 point;
-    float JnAccumulator = 0.0f;
-    float JtAccumulator = 0.0f;
-    float targetVel = 0.0f;
-};
-
-struct ContactManifold {
-    Body* bodyA;
-    Body* bodyB;
-
-    Vec2 normalAB;
-    float penetration;
-
-    std::vector<Contact> contacts;
-
-    float getRestitution() const {
-        if (bodyA->isStatic || bodyB->isStatic) {
-            return WALLRESTITUTION;
-        }
-        return OBJRESTITUTION;
-    }
-
-    float getMu() const {
-        if (bodyA->isStatic || bodyB->isStatic) {
-            return WALLKINETICMU;
-        }
-        return OBJMU;
-    }
-};
-
-
-struct Interval {
-    float min;
-    float max;
-    Interval(float min, float max) : min(min), max(max) {};
-};
-
-struct Edge {
-    Vec2 p1;
-    Vec2 p2;
-};
 
 
 // デバッグ描画用のデータを保持するための構造体
@@ -154,6 +61,20 @@ struct DebugLine {
 };
 std::vector<DebugLine> debugLines;
 std::vector<Vec2> debugPoints;
+
+float ContactManifold::getRestitution() const {
+    if (bodyA->isStatic || bodyB->isStatic) {
+        return WALLRESTITUTION;
+    }
+    return OBJRESTITUTION;
+}
+
+float ContactManifold::getMu() const {
+    if (bodyA->isStatic || bodyB->isStatic) {
+        return WALLKINETICMU;
+    }
+    return OBJMU;
+}
 
 /* プロトタイプ宣言 */
 

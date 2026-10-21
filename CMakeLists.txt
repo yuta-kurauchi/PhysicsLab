@@ -8,6 +8,7 @@ project(PhysicsLab CXX)
 # set(Y X), XをYに代入
 set(SOURCES
     sandbox/main.cpp
+    engine/physics2d/World2D.cpp
 )
 
 # 使用するC++の規格の設定(C++17)

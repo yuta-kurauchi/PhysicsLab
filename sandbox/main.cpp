@@ -27,8 +27,10 @@ const float WALLRESTITUTION = 0.5f;
 const float OBJRESTITUTION = 0.5;
 const float WALLKINETICMU = 0.5f;
 const float OBJMU = 0.5f;
-const float RESTITUTIONTHRESHOLD = 10.0f; // 暫定(要検証)
-const float EPSILON = 2.0f; // 暫定 (若干浮いて止まっているように見えるので要検討)
+const float RESTITUTIONTHRESHOLD = 10.0f; // 反発切替は検証済み。値は暫定
+const float EPSILON = 2.0f; // Polygon-Wall接触候補の許容差。暫定値
+const float PENETRATIONSLOP = 1.0f;
+const float PENETRATIONBETA = 1.0f;
 const float INF = std::numeric_limits<float>::infinity();
 
 // WindowSize
@@ -1142,13 +1144,14 @@ void applyImpulse(Body& body,const Vec2& impulse, const Vec2& contactArm) {
 void resolvePenetration(ContactManifold& manifold) {
     const Vec2 normal = manifold.normalAB;
     const float penetration = manifold.penetration;
+    const float correctionValue = PENETRATIONBETA * std::max(penetration - PENETRATIONSLOP, 0.0f);
     Body& a = *manifold.bodyA;
     Body& b = *manifold.bodyB;
     // めり込み補正(質量の逆比で移動)
     float invMassSum = a.invMass + b.invMass;
     if (invMassSum != 0.0f) {
-        a.pos -= normal * penetration * a.invMass / invMassSum;
-        b.pos += normal * penetration * b.invMass / invMassSum;
+        a.pos -= normal * correctionValue * a.invMass / invMassSum;
+        b.pos += normal * correctionValue * b.invMass / invMassSum;
     }
 }
 

@@ -27,11 +27,17 @@ struct DebugLine {
     Vec2 p2;
 };
 
+struct RGB {
+    float r = 0.0f;
+    float g = 0.0f;
+    float b = 0.0f;
+};
+
 
 /* 設定 */
 
 // 初期化設定
-constexpr SceneType ACTIVE_SCENE = SceneType::Stacking;
+constexpr SceneType ACTIVE_SCENE = SceneType::Random;
 constexpr unsigned int RANDOM_SEED = 12345;
 // Obj設定
 const int circleNum = 3;
@@ -40,17 +46,21 @@ const int triangleNum = 2;
 const int STACKINGNUM = 3;
 
 // WindowSize
-const float W = 800;
-const float H = 600;
+const float W = 800.0f;
+const float H = 600.0f;
 // WindowMode
 const SDL_WindowFlags flags = 0; // 特に機能を持たせる必要ないので0
 
 // 定数
 const double PI = std::acos(-1.0);
 
+
 // デバッグ用
 std::vector<DebugLine> debugLines;
 std::vector<Vec2> debugPoints;
+
+// 物体の色
+std::vector<RGB> polygonColors;
 
 
 /* プロトタイプ宣言 */
@@ -64,7 +74,7 @@ void InitializeStackingScene(World2D& world);
 /* Render */
 void render(SDL_Renderer* renderer, const World2D& world);
 void drawCircle(SDL_Renderer* renderer, const Circle& circle);
-void drawPolygon(SDL_Renderer* renderer, const Polygon& polygon);
+void drawPolygon(SDL_Renderer* renderer,const Polygon& polygon, const RGB& color);
 
 int main(int argc, char* argv[]) {
     std::cout<< "PhysicsLab has started up\n";
@@ -177,6 +187,7 @@ int main(int argc, char* argv[]) {
 void InitializeObj(World2D& world, SceneType scene) {
     world.polygons.clear();
     world.circles.clear();
+    polygonColors.clear();
 
     switch (scene) {
         case SceneType::Random:
@@ -264,10 +275,9 @@ void InitializeRandomScene(World2D& world, unsigned int seed) {
         body.inertia = body.mass * (w * w + h * h) / 12.0f; // I_z = m (w^2 + h^2) / 12
         body.invInertia = 1.0f / body.inertia;
 
-        // 緑
-        rectangle.rgb.g = 1.0f;
 
         world.polygons.push_back(rectangle);
+        polygonColors.push_back(RGB{0.0f, 1.0f, 0.0f});
     }
 
     // triangle
@@ -296,10 +306,9 @@ void InitializeRandomScene(World2D& world, unsigned int seed) {
         body.inertia = body.mass * ((w * w / 24.0f) + (h * h / 18.0f)); // I_z = m (w^2 / 24 + h^2 / 18)
         body.invInertia = 1.0f / body.inertia;
 
-        // 青
-        triangle.rgb.b = 1.0f;
 
         world.polygons.push_back(triangle);
+        polygonColors.push_back(RGB{0.0f, 0.0f, 1.0f});   
     }
 }
 
@@ -325,10 +334,9 @@ void InitializeSingleBoxScene(World2D& world) {
     body.inertia = body.mass * (w * w + h * h) / 12.0f; // I_z = m (w^2 + h^2) / 12
     body.invInertia = 1.0f / body.inertia;
 
-    // 緑
-    rectangle.rgb.g = 1.0f;
 
     world.polygons.push_back(rectangle);
+    polygonColors.push_back(RGB{0.0f, 1.0f, 0.0f});
 }
 
 void InitializeStackingScene(World2D& world) {
@@ -355,10 +363,9 @@ void InitializeStackingScene(World2D& world) {
         body.inertia = body.mass * (w * w + h * h) / 12.0f; // I_z = m (w^2 + h^2) / 12
         body.invInertia = 1.0f / body.inertia;
 
-        // 緑
-        rectangle.rgb.g = 1.0f;
 
         world.polygons.push_back(rectangle);
+        polygonColors.push_back(RGB{0.0f, 1.0f, 0.0f});
     }
 }
 
@@ -371,8 +378,8 @@ void render(SDL_Renderer* renderer, const World2D& world) {
 
     // ObjDraw
     // rect(x, y)はrectの左上の頂点座標
-    for (const Polygon& polygon : world.polygons) {
-        drawPolygon(renderer, polygon);
+    for (size_t i = 0; i < world.polygons.size(); ++i) {
+        drawPolygon(renderer, world.polygons[i], polygonColors[i]);
     }
     for (const Circle& circle : world.circles) {
         drawCircle(renderer, circle);
@@ -454,9 +461,9 @@ void drawCircle(SDL_Renderer* renderer, const Circle& circle) {
 }
 
 // polygonの描画
-void drawPolygon(SDL_Renderer* renderer,const Polygon& polygon) {
+void drawPolygon(SDL_Renderer* renderer,const Polygon& polygon, const RGB& color) {
     // 辺の色
-    SDL_SetRenderDrawColor(renderer, polygon.rgb.r * 255, polygon.rgb.g * 255, polygon.rgb.b * 255, 255);
+    SDL_SetRenderDrawColor(renderer, color.r * 255, color.g * 255, color.b * 255, 255);
 
     std::vector<Vec2> worldVertices = getVerticesPos(polygon);
 
@@ -484,9 +491,9 @@ void drawPolygon(SDL_Renderer* renderer,const Polygon& polygon) {
         vert[2].position.y = worldVertices[p3].y;
         // tri : 青, rec: 緑
         for (int j = 0; j < 3; ++j) {
-            vert[j].color.r = polygon.rgb.r;
-            vert[j].color.g = polygon.rgb.g;
-            vert[j].color.b = polygon.rgb.b;
+            vert[j].color.r = color.r;
+            vert[j].color.g = color.g;
+            vert[j].color.b = color.b;
             vert[j].color.a = 1.0;
         }
         SDL_RenderGeometry(renderer, NULL, vert, 3, NULL, 0);

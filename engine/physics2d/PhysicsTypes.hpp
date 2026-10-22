@@ -3,12 +3,6 @@
 #include <vector>
 #include "math/Vec2.hpp"
 
-/* 色の管理用(後で描画側へ移す) */
-struct RGB {
-    float r;
-    float g;
-    float b;
-};
 
 /* Obj用の構造体 */
 
@@ -33,7 +27,6 @@ struct Circle {
 struct Polygon {
     Body body;
     std::vector<Vec2> localVertices;
-    RGB rgb{0.0f, 0.0f, 0.0f};
 };
 
 struct AxisInfo {

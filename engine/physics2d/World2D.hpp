@@ -1,5 +1,8 @@
 #pragma once
 
+#include <optional>
+#include <vector>
+
 #include "physics2d/PhysicsTypes.hpp"
 
 class World2D {

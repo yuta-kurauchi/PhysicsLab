@@ -9,7 +9,8 @@
 #include "physics2d/PhysicsTypes.hpp"
 #include "physics2d/World2D.hpp"
 
-
+// debug用フラグ
+constexpr bool ENABLE_NUMCHECK = true;
 
 // 処理用
 const int solverIterations = 10;
@@ -115,14 +116,15 @@ void World2D::step(float dt) {
         resolvePenetration(manifold);
     }
 
+    if (ENABLE_NUMCHECK) {
     for (const Polygon& poly : polygons) {
-        const Body& body = poly.body;
-        numcheck(body);
+        numcheck(poly.body);
     }
+
     for (const Circle& cir : circles) {
-        const Body& body = cir.body;
-        numcheck(body);
+        numcheck(cir.body);
     }
+}
 }
 
 void numcheck(const Body& body) {

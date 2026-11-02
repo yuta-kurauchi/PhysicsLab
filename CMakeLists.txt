@@ -60,3 +60,19 @@ endif()
 if (MSVC) 
     target_compile_options(PhysicsLab PRIVATE /utf-8)
 endif()
+
+# 3D Sandbox
+# 3D用の新しい実行ファイルを定義
+add_executable(PhysicsLab3D
+    sandbox3d/main.cpp
+)
+
+# 依存関係(PhysicsLab3D -> SDL3)をCmakeに伝える
+target_link_libraries(PhysicsLab3D
+    PRIVATE SDL3::SDL3
+)
+
+# ソースをUTF-8に統一
+if(MSVC)
+    target_compile_options(PhysicsLab3D PRIVATE /utf-8)
+endif()

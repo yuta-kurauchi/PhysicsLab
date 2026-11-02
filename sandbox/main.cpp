@@ -104,8 +104,6 @@ int main(int argc, char* argv[]) {
         std::cout << "window作成に失敗\n";
         // エラー内容の表示
         std::cout << SDL_GetError() << "\n";
-        // 終了処理
-        SDL_DestroyWindow(window);
         SDL_Quit();
         return 1;
     }
@@ -120,7 +118,6 @@ int main(int argc, char* argv[]) {
         // エラー内容の表示
         std::cout << SDL_GetError() << "\n";
         // 終了処理
-        SDL_DestroyRenderer(renderer);
         SDL_DestroyWindow(window);
         SDL_Quit();
         return 1;

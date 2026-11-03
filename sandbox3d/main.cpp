@@ -73,6 +73,8 @@ int main(int argc, char* argv[]) {
     /* MainLoop */
     bool running = true;
     while (running) {
+
+
         /* Event */
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
@@ -85,6 +87,48 @@ int main(int argc, char* argv[]) {
                     running = false;
                 }
             }
+        }
+
+
+        /* Draw */
+        // cmdbuf: gpuへの命令を記録するための箱
+        SDL_GPUCommandBuffer* cmdbuf = SDL_AcquireGPUCommandBuffer(device);
+        if (!cmdbuf) {
+            SDL_Log("AcquireGPUCommandBuffer failed: %s", SDL_GetError());
+            running = false;
+            break;
+        }
+
+        // 描画すべき場所の取得
+        SDL_GPUTexture* swapchainTexture = nullptr;
+        if (!SDL_WaitAndAcquireGPUSwapchainTexture(cmdbuf, window, &swapchainTexture, nullptr, nullptr)) {
+            SDL_Log("WaitAndAcquireGPUSwapchainTexture failed: %s", SDL_GetError());
+            SDL_CancelGPUCommandBuffer(cmdbuf);
+            running = false;
+            break;
+        }
+
+        // 描画すべき場所が取得できた場合のみ描画処理を追加
+        if (swapchainTexture != nullptr) {
+            // 描画設定
+            SDL_GPUColorTargetInfo colorTargetInfo{};
+            colorTargetInfo.texture = swapchainTexture;
+            colorTargetInfo.clear_color = SDL_FColor{ 0.08f, 0.10f, 0.14f, 1.0f };
+            colorTargetInfo.load_op = SDL_GPU_LOADOP_CLEAR; // 最初にClearScreen
+            colorTargetInfo.store_op = SDL_GPU_STOREOP_STORE;
+
+            // 描画開始
+            SDL_GPURenderPass* renderPass = SDL_BeginGPURenderPass(cmdbuf, &colorTargetInfo, 1, nullptr);
+            // ここに追加の描画処理を書く
+            // 描画終了
+            SDL_EndGPURenderPass(renderPass);
+        }
+
+        // GPUに送信
+        if (!SDL_SubmitGPUCommandBuffer(cmdbuf)) {
+            SDL_Log("SubmitGPUCommandBuffer failed: %s", SDL_GetError());
+            running = false;
+            break;
         }
     }
 

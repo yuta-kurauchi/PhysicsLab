@@ -5,6 +5,9 @@
 
 /* 設定 */
 
+// プログラム正常終了フラグ
+bool isSuccessful = true;
+
 // WindowSize
 const float W = 800.0f;
 const float H = 600.0f;
@@ -21,6 +24,8 @@ const bool debug_mode = true;
 const char* name = nullptr;
 // BuildDirの絶対パス
 const char* BasePath = nullptr;
+// 描画設定
+bool UsaWireframeMode = false;
 
 
 /* プロトタイプ宣言 */
@@ -80,21 +85,20 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    /* CreateShaders */
     InitializeAssetLoader();
-    std::cout << "BasePath = " << BasePath << "\n";
     SDL_GPUShader* vertexShader = loadShader(device, "RawTriangle.vert");
     if (!vertexShader) {
-        SDL_Log("Failed to create vertex shader!");
+        SDL_Log("Failed to create vertex shader: %s", SDL_GetError());
         SDL_ReleaseWindowFromGPUDevice(device, window);
         SDL_DestroyGPUDevice(device);
         SDL_DestroyWindow(window);
         SDL_Quit();
         return 1;
     }
-
     SDL_GPUShader* fragmentShader = loadShader(device, "SolidColor.frag");
     if (!fragmentShader) {
-        SDL_Log("Failed to create fragment shader!");
+        SDL_Log("Failed to create fragment shader: %s", SDL_GetError());
         SDL_ReleaseGPUShader(device, vertexShader);
         SDL_ReleaseWindowFromGPUDevice(device, window);
         SDL_DestroyGPUDevice(device);
@@ -103,7 +107,49 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    std::cout << "Success to create shader\n";
+    /* Create the pipelines */
+    SDL_GPUGraphicsPipelineCreateInfo pipelineCreateInfo{};
+    pipelineCreateInfo.target_info.num_color_targets = 1;
+    SDL_GPUColorTargetDescription colorTarget{};
+    colorTarget.format = SDL_GetGPUSwapchainTextureFormat(device, window);
+    pipelineCreateInfo.target_info.color_target_descriptions = &colorTarget;
+    pipelineCreateInfo.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
+    pipelineCreateInfo.vertex_shader = vertexShader;
+    pipelineCreateInfo.fragment_shader = fragmentShader;
+
+    SDL_GPUGraphicsPipeline* FillPipeline = nullptr;
+    pipelineCreateInfo.rasterizer_state.fill_mode = SDL_GPU_FILLMODE_FILL;
+    FillPipeline = SDL_CreateGPUGraphicsPipeline(device, &pipelineCreateInfo);
+    if (!FillPipeline) {
+        SDL_Log("Failed to create fill pipeline: %s", SDL_GetError());
+        SDL_ReleaseGPUShader(device, vertexShader);
+        SDL_ReleaseGPUShader(device, fragmentShader);
+        SDL_ReleaseWindowFromGPUDevice(device, window);
+        SDL_DestroyGPUDevice(device);
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return 1;
+    }
+
+    SDL_GPUGraphicsPipeline* LinePipeline = nullptr;
+    pipelineCreateInfo.rasterizer_state.fill_mode = SDL_GPU_FILLMODE_LINE;
+    LinePipeline = SDL_CreateGPUGraphicsPipeline(device, &pipelineCreateInfo);
+    if (!LinePipeline) {
+        SDL_Log("Failed to create line pipeline: %s", SDL_GetError());
+        SDL_ReleaseGPUGraphicsPipeline(device, FillPipeline);
+        SDL_ReleaseGPUShader(device, vertexShader);
+        SDL_ReleaseGPUShader(device, fragmentShader);
+        SDL_ReleaseWindowFromGPUDevice(device, window);
+        SDL_DestroyGPUDevice(device);
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return 1;
+    }
+
+    /* Shaderの解放 */
+    SDL_ReleaseGPUShader(device, vertexShader);
+    SDL_ReleaseGPUShader(device, fragmentShader);
+    
 
     /* MainLoop */
     bool running = true;
@@ -131,6 +177,7 @@ int main(int argc, char* argv[]) {
         if (!cmdbuf) {
             SDL_Log("AcquireGPUCommandBuffer failed: %s", SDL_GetError());
             running = false;
+            isSuccessful = false;
             break;
         }
 
@@ -140,6 +187,7 @@ int main(int argc, char* argv[]) {
             SDL_Log("WaitAndAcquireGPUSwapchainTexture failed: %s", SDL_GetError());
             SDL_CancelGPUCommandBuffer(cmdbuf);
             running = false;
+            isSuccessful = false;
             break;
         }
 
@@ -154,7 +202,8 @@ int main(int argc, char* argv[]) {
 
             // 描画開始
             SDL_GPURenderPass* renderPass = SDL_BeginGPURenderPass(cmdbuf, &colorTargetInfo, 1, nullptr);
-            // ここに追加の描画処理を書く
+            SDL_BindGPUGraphicsPipeline(renderPass, UsaWireframeMode ? LinePipeline : FillPipeline);
+            SDL_DrawGPUPrimitives(renderPass, 3, 1, 0, 0);
             // 描画終了
             SDL_EndGPURenderPass(renderPass);
         }
@@ -163,20 +212,25 @@ int main(int argc, char* argv[]) {
         if (!SDL_SubmitGPUCommandBuffer(cmdbuf)) {
             SDL_Log("SubmitGPUCommandBuffer failed: %s", SDL_GetError());
             running = false;
+            isSuccessful = false;
             break;
         }
     }
 
     /* SDL終了処理 */
-    SDL_ReleaseGPUShader(device, vertexShader);
-    SDL_ReleaseGPUShader(device, fragmentShader);
+    SDL_ReleaseGPUGraphicsPipeline(device, LinePipeline);
+    SDL_ReleaseGPUGraphicsPipeline(device, FillPipeline);
     SDL_ReleaseWindowFromGPUDevice(device, window);
     SDL_DestroyGPUDevice(device);
     SDL_DestroyWindow(window);
     SDL_Quit();
 
-    std::cout << "PhyscsiLab3D completed successfully\n";
-    return 0;
+    if (isSuccessful) {
+        std::cout << "PhyscsiLab3D completed successfully\n";
+        return 0;
+    } else {
+        return 1;
+    }
 }
 
 
@@ -223,8 +277,6 @@ SDL_GPUShader* loadShader(
         SDL_Log("Failed to load shader from disk! %s", fullPath);
         return nullptr;
     }
-    std::cout << "Success to load shader from disk! " << fullPath << "\n";
-    std::cout << "FileSize is " << codeSize << "\n";
 
     /* Shader作成 */
     SDL_GPUShaderCreateInfo shaderInfo = {

@@ -16,8 +16,19 @@ const SDL_GPUShaderFormat format_flags = SDL_GPU_SHADERFORMAT_SPIRV |
     SDL_GPU_SHADERFORMAT_DXIL |
     SDL_GPU_SHADERFORMAT_MSL |
     SDL_GPU_SHADERFORMAT_METALLIB;
+// GPUDevice
 const bool debug_mode = true;
 const char* name = nullptr;
+// BuildDirの絶対パス
+const char* BasePath = nullptr;
+
+
+/* プロトタイプ宣言 */
+SDL_GPUShader* loadShader(
+    SDL_GPUDevice* device,
+    const char* filename
+);
+void InitializeAssetLoader();
 
 
 int main(int argc, char* argv[]) {
@@ -69,6 +80,9 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    InitializeAssetLoader();
+    std::cout << "BasePath = " << BasePath << "\n";
+    loadShader(device, "RawTriangle.vert");
 
     /* MainLoop */
     bool running = true;
@@ -140,4 +154,55 @@ int main(int argc, char* argv[]) {
 
     std::cout << "PhyscsiLab3D completed successfully\n";
     return 0;
+}
+
+
+void InitializeAssetLoader() {
+    BasePath = SDL_GetBasePath();
+}
+
+
+SDL_GPUShader* loadShader(
+    SDL_GPUDevice* device,
+    const char* shaderFilename
+) {
+    /* ファイル名から、stageを特定 */
+    SDL_GPUShaderStage stage;
+    if (SDL_strstr(shaderFilename, ".vert")) {
+        stage = SDL_GPU_SHADERSTAGE_VERTEX;
+    } else if (SDL_strstr(shaderFilename, ".frag")) {
+        stage = SDL_GPU_SHADERSTAGE_FRAGMENT;
+    } else {
+        SDL_Log("Invalid shader stage!");
+        return nullptr;
+    }
+
+    /* shaderFileへのfullPath作成 */
+    char fullPath[256];
+    SDL_GPUShaderFormat backendFormats = SDL_GetGPUShaderFormats(device);
+    SDL_GPUShaderFormat format = SDL_GPU_SHADERFORMAT_INVALID;
+    const char* entrypoint;
+
+    // backendFormatsに含まれているshaderFormatから作成
+    if (backendFormats & SDL_GPU_SHADERFORMAT_MSL) {
+        SDL_snprintf(fullPath, sizeof(fullPath), "%sshaders/%s.msl", BasePath, shaderFilename);
+        format = SDL_GPU_SHADERFORMAT_MSL;
+        entrypoint = "main0";
+    } else {
+        SDL_Log("Unrecognized backend shader format!");
+        return nullptr;
+    }
+
+    /* file読み込み */
+    size_t codeSize;
+    void* code = SDL_LoadFile(fullPath, &codeSize);
+    if (!code) {
+        SDL_Log("Failed to load shader from disk! %s", fullPath);
+        return nullptr;
+    }
+    std::cout << "Success to load shader from disk! " << fullPath << "\n";
+    std::cout << "FileSize is " << codeSize << "\n";
+
+    SDL_free(code);
+    return nullptr;
 }

@@ -76,3 +76,14 @@ target_link_libraries(PhysicsLab3D
 if(MSVC)
     target_compile_options(PhysicsLab3D PRIVATE /utf-8)
 endif()
+
+# MACの場合は、mslのコンパイル済みファイルをコピー
+if (APPLE)
+    add_custom_command(
+        TARGET PhysicsLab3D POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_CURRENT_SOURCE_DIR}/sandbox3d/shaders/compiled/msl"
+            "$<TARGET_FILE_DIR:PhysicsLab3D>/shaders"
+        VERBATIM
+    )
+endif()

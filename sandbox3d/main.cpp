@@ -82,7 +82,28 @@ int main(int argc, char* argv[]) {
 
     InitializeAssetLoader();
     std::cout << "BasePath = " << BasePath << "\n";
-    loadShader(device, "RawTriangle.vert");
+    SDL_GPUShader* vertexShader = loadShader(device, "RawTriangle.vert");
+    if (!vertexShader) {
+        SDL_Log("Failed to create vertex shader!");
+        SDL_ReleaseWindowFromGPUDevice(device, window);
+        SDL_DestroyGPUDevice(device);
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return 1;
+    }
+
+    SDL_GPUShader* fragmentShader = loadShader(device, "SolidColor.frag");
+    if (!fragmentShader) {
+        SDL_Log("Failed to create fragment shader!");
+        SDL_ReleaseGPUShader(device, vertexShader);
+        SDL_ReleaseWindowFromGPUDevice(device, window);
+        SDL_DestroyGPUDevice(device);
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return 1;
+    }
+
+    std::cout << "Success to create shader\n";
 
     /* MainLoop */
     bool running = true;
@@ -147,6 +168,8 @@ int main(int argc, char* argv[]) {
     }
 
     /* SDL終了処理 */
+    SDL_ReleaseGPUShader(device, vertexShader);
+    SDL_ReleaseGPUShader(device, fragmentShader);
     SDL_ReleaseWindowFromGPUDevice(device, window);
     SDL_DestroyGPUDevice(device);
     SDL_DestroyWindow(window);
@@ -203,6 +226,22 @@ SDL_GPUShader* loadShader(
     std::cout << "Success to load shader from disk! " << fullPath << "\n";
     std::cout << "FileSize is " << codeSize << "\n";
 
+    /* Shader作成 */
+    SDL_GPUShaderCreateInfo shaderInfo = {
+        codeSize,
+        static_cast<Uint8*>(code),
+        entrypoint,
+        format,
+        stage
+    };
+    SDL_GPUShader* shader = SDL_CreateGPUShader(device, &shaderInfo);
+    if (!shader) {
+        SDL_Log("Failed to create shader!");
+        SDL_free(code);
+        return nullptr;
+    }
+
+
     SDL_free(code);
-    return nullptr;
+    return shader;
 }

@@ -3,6 +3,13 @@
 #include <SDL3/SDL_main.h>
 
 
+/* 構造体 */
+struct Vertex {
+    float x, y; // Position
+    float r, g, b; // Color
+};
+
+
 /* 設定 */
 
 // プログラム正常終了フラグ
@@ -87,7 +94,7 @@ int main(int argc, char* argv[]) {
 
     /* CreateShaders */
     InitializeAssetLoader();
-    SDL_GPUShader* vertexShader = loadShader(device, "RawTriangle.vert");
+    SDL_GPUShader* vertexShader = loadShader(device, "PositionColor.vert");
     if (!vertexShader) {
         SDL_Log("Failed to create vertex shader: %s", SDL_GetError());
         SDL_ReleaseWindowFromGPUDevice(device, window);
@@ -107,12 +114,37 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    /* vertex shader layout */
+    SDL_GPUVertexBufferDescription vertexBufferDescription{};
+    vertexBufferDescription.slot = 0;
+    vertexBufferDescription.pitch = sizeof(Vertex);
+    vertexBufferDescription.input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX;
+    vertexBufferDescription.instance_step_rate = 0;
+
+    SDL_GPUVertexAttribute vertexAttribute[2]{};
+    vertexAttribute[0].location = 0;
+    vertexAttribute[0].buffer_slot = 0;
+    vertexAttribute[0].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2;
+    vertexAttribute[0].offset = offsetof(Vertex, x);
+    vertexAttribute[1].location = 1;
+    vertexAttribute[1].buffer_slot = 0;
+    vertexAttribute[1].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
+    vertexAttribute[1].offset = offsetof(Vertex, r);
+
+    SDL_GPUVertexInputState vertexInputState{};
+    vertexInputState.vertex_buffer_descriptions = &vertexBufferDescription;
+    vertexInputState.num_vertex_buffers = 1;
+    vertexInputState.vertex_attributes = vertexAttribute;
+    vertexInputState.num_vertex_attributes = 2;
+
+
     /* Create the pipelines */
     SDL_GPUGraphicsPipelineCreateInfo pipelineCreateInfo{};
     pipelineCreateInfo.target_info.num_color_targets = 1;
     SDL_GPUColorTargetDescription colorTarget{};
     colorTarget.format = SDL_GetGPUSwapchainTextureFormat(device, window);
     pipelineCreateInfo.target_info.color_target_descriptions = &colorTarget;
+    pipelineCreateInfo.vertex_input_state = vertexInputState;
     pipelineCreateInfo.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
     pipelineCreateInfo.vertex_shader = vertexShader;
     pipelineCreateInfo.fragment_shader = fragmentShader;
@@ -149,7 +181,129 @@ int main(int argc, char* argv[]) {
     /* Shaderの解放 */
     SDL_ReleaseGPUShader(device, vertexShader);
     SDL_ReleaseGPUShader(device, fragmentShader);
+
+
+    // 頂点座標の定義
+    Vertex vertices[3] = {
+        { -0.1f, -0.1f, 1.0f, 0.0f, 0.0f },
+        { 0.1f, -0.1f, 0.0f, 1.0f, 0.0f },
+        { 0.0f, 0.1f, 0.0f, 0.0f ,1.0f }
+    };
+
+    /* Create the vertex buffer */
+    SDL_GPUBufferCreateInfo bufferInfo{
+        SDL_GPU_BUFFERUSAGE_VERTEX,
+        sizeof(vertices),
+        0
+    };
+
+    SDL_GPUBuffer* vertexBuffer = nullptr;
+    vertexBuffer = SDL_CreateGPUBuffer(device, &bufferInfo);
+    if (!vertexBuffer) {
+        SDL_Log("Failed to create vertex buffer: %s", SDL_GetError());
+        SDL_ReleaseGPUGraphicsPipeline(device, LinePipeline);
+        SDL_ReleaseGPUGraphicsPipeline(device, FillPipeline);
+        SDL_ReleaseWindowFromGPUDevice(device, window);
+        SDL_DestroyGPUDevice(device);
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return 1;
+    }
+
+
+    /* Create the transfer buffer */
+    SDL_GPUTransferBufferCreateInfo transferBufferInfo{
+        SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD,
+        sizeof(vertices),
+        0
+    };
+    SDL_GPUTransferBuffer* transferBuffer = nullptr;
+    transferBuffer = SDL_CreateGPUTransferBuffer(device, &transferBufferInfo);
+    if (!transferBuffer) {
+        SDL_Log("Failed to create transfer buffer: %s", SDL_GetError());
+        SDL_ReleaseGPUBuffer(device, vertexBuffer);
+        SDL_ReleaseGPUGraphicsPipeline(device, LinePipeline);
+        SDL_ReleaseGPUGraphicsPipeline(device, FillPipeline);
+        SDL_ReleaseWindowFromGPUDevice(device, window);
+        SDL_DestroyGPUDevice(device);
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return 1;
+    }
+
+    // Acquire transfer buffer memory
+    Vertex* transferData = static_cast<Vertex*>(SDL_MapGPUTransferBuffer(
+        device,
+        transferBuffer,
+        false
+    ));
+    if (!transferData) {
+        SDL_Log("Failed to map transfer buffer: %s", SDL_GetError());
+        SDL_ReleaseGPUTransferBuffer(device, transferBuffer);
+        SDL_ReleaseGPUBuffer(device, vertexBuffer);
+        SDL_ReleaseGPUGraphicsPipeline(device, LinePipeline);
+        SDL_ReleaseGPUGraphicsPipeline(device, FillPipeline);
+        SDL_ReleaseWindowFromGPUDevice(device, window);
+        SDL_DestroyGPUDevice(device);
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return 1;
+    }
+
+    // copy vertex to transferBuffer
+    SDL_memcpy(transferData, vertices, sizeof(vertices));
+
+    SDL_UnmapGPUTransferBuffer(device, transferBuffer);
+
     
+    /* Upload the trasfer data to the vertex buffer */
+    SDL_GPUCommandBuffer* uploadCmdBuf = SDL_AcquireGPUCommandBuffer(device);
+    if (!uploadCmdBuf) {
+        SDL_Log("Failed to upload command buffer: %s", SDL_GetError());
+        SDL_ReleaseGPUTransferBuffer(device, transferBuffer);
+        SDL_ReleaseGPUBuffer(device, vertexBuffer);
+        SDL_ReleaseGPUGraphicsPipeline(device, LinePipeline);
+        SDL_ReleaseGPUGraphicsPipeline(device, FillPipeline);
+        SDL_ReleaseWindowFromGPUDevice(device, window);
+        SDL_DestroyGPUDevice(device);
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return 1;
+    }
+
+    SDL_GPUCopyPass* copyPass = SDL_BeginGPUCopyPass(uploadCmdBuf);
+
+    SDL_GPUTransferBufferLocation source{
+        transferBuffer,
+        0
+    };
+    SDL_GPUBufferRegion destination{
+        vertexBuffer,
+        0,
+        sizeof(vertices)
+    };
+    SDL_UploadToGPUBuffer(
+        copyPass,
+        &source,
+        &destination,
+        false
+    );
+
+    SDL_EndGPUCopyPass(copyPass);
+    if (!SDL_SubmitGPUCommandBuffer(uploadCmdBuf)) {
+        SDL_Log("Failed to submit GPU command buffer: %s", SDL_GetError());
+        SDL_ReleaseGPUTransferBuffer(device, transferBuffer);
+        SDL_ReleaseGPUBuffer(device, vertexBuffer);
+        SDL_ReleaseGPUGraphicsPipeline(device, LinePipeline);
+        SDL_ReleaseGPUGraphicsPipeline(device, FillPipeline);
+        SDL_ReleaseWindowFromGPUDevice(device, window);
+        SDL_DestroyGPUDevice(device);
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return 1;
+    }
+
+    SDL_ReleaseGPUTransferBuffer(device, transferBuffer);
 
     /* MainLoop */
     bool running = true;
@@ -200,9 +354,13 @@ int main(int argc, char* argv[]) {
             colorTargetInfo.load_op = SDL_GPU_LOADOP_CLEAR; // 最初にClearScreen
             colorTargetInfo.store_op = SDL_GPU_STOREOP_STORE;
 
-            // 描画開始
+            /* RenderPass */
             SDL_GPURenderPass* renderPass = SDL_BeginGPURenderPass(cmdbuf, &colorTargetInfo, 1, nullptr);
             SDL_BindGPUGraphicsPipeline(renderPass, UsaWireframeMode ? LinePipeline : FillPipeline);
+            SDL_GPUBufferBinding vertexBufferBinding{};
+            vertexBufferBinding.buffer = vertexBuffer;
+            vertexBufferBinding.offset = 0;
+            SDL_BindGPUVertexBuffers(renderPass, 0, &vertexBufferBinding, 1);
             SDL_DrawGPUPrimitives(renderPass, 3, 1, 0, 0);
             // 描画終了
             SDL_EndGPURenderPass(renderPass);
@@ -218,6 +376,7 @@ int main(int argc, char* argv[]) {
     }
 
     /* SDL終了処理 */
+    SDL_ReleaseGPUBuffer(device, vertexBuffer);
     SDL_ReleaseGPUGraphicsPipeline(device, LinePipeline);
     SDL_ReleaseGPUGraphicsPipeline(device, FillPipeline);
     SDL_ReleaseWindowFromGPUDevice(device, window);

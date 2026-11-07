@@ -484,6 +484,10 @@ SDL_GPUShader* loadShader(
         SDL_snprintf(fullPath, sizeof(fullPath), "%sshaders/%s.msl", BasePath, shaderFilename);
         format = SDL_GPU_SHADERFORMAT_MSL;
         entrypoint = "main0";
+    } else if (backendFormats & SDL_GPU_SHADERFORMAT_DXIL) {
+        SDL_snprintf(fullPath, sizeof(fullPath), "%sshaders/%s.dxil", BasePath, shaderFilename);
+        format = SDL_GPU_SHADERFORMAT_DXIL;
+        entrypoint = "main";
     } else {
         SDL_Log("Unrecognized backend shader format!");
         return nullptr;

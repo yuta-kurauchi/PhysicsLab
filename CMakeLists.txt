@@ -87,3 +87,17 @@ if (APPLE)
         VERBATIM
     )
 endif()
+
+# Windowsの場合は、dxilのコンパイル済みファイルをコピー
+if (WIN32)
+    add_custom_command(
+        TARGET PhysicsLab3D POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_CURRENT_SOURCE_DIR}/sandbox3d/shaders/compiled/dxil"
+            "$<TARGET_FILE_DIR:PhysicsLab3D>/shaders"
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+            "$<TARGET_FILE:SDL3::SDL3-shared>"
+            "$<TARGET_FILE_DIR:PhysicsLab3D>"
+        VERBATIM
+    )
+endif()

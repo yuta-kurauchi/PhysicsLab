@@ -72,6 +72,13 @@ target_link_libraries(PhysicsLab3D
     PRIVATE SDL3::SDL3
 )
 
+# includeするフォルダーを指定
+target_include_directories(
+    PhysicsLab3D
+    PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/engine
+)
+
 # ソースをUTF-8に統一
 if(MSVC)
     target_compile_options(PhysicsLab3D PRIVATE /utf-8)

@@ -15,6 +15,7 @@ struct Vec3 {
     /* 演算子のオーバーロード */
 
     /* 非破壊的 */
+    // 二項演算子
     Vec3 operator+(const Vec3& other) const {
         return Vec3(x + other.x, y + other.y, z + other.z);
     }
@@ -26,6 +27,10 @@ struct Vec3 {
     }
     Vec3 operator/(float scalar) const {
         return Vec3(x / scalar, y / scalar, z / scalar);
+    }
+    // 単項演算子
+    Vec3 operator- () const {
+        return Vec3(-x, -y, -z);
     }
 
     /* 破壊的 */

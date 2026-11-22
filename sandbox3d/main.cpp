@@ -5,6 +5,8 @@
 #include "math/Vec3.hpp"
 #include "math/Mat4.hpp"
 
+constexpr double PI = 3.14159265358979323846;
+
 
 /* リソース管理用 */
 struct SDLGuard {

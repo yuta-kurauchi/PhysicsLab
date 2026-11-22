@@ -77,6 +77,7 @@ target_include_directories(
     PhysicsLab3D
     PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/engine
+    ${CMAKE_CURRENT_SOURCE_DIR}/sandbox3d
 )
 
 # ソースをUTF-8に統一

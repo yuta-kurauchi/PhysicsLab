@@ -4,6 +4,7 @@
 #include <SDL3/SDL_main.h>
 #include "math/Vec3.hpp"
 #include "math/Mat4.hpp"
+#include "Camera.hpp"
 
 constexpr double PI = 3.14159265358979323846;
 

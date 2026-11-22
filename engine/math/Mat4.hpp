@@ -55,6 +55,14 @@ struct Mat4 {
         res.m[3][2] = t.z;
         return res;
     }
+    static Mat4 translation(const Vec4& t) {
+        Mat4 res = identity();
+        res.m[3][0] = t.v[0];
+        res.m[3][1] = t.v[1];
+        res.m[3][2] = t.v[2];
+        res.m[3][3] = t.v[3];
+        return res;
+    }
     // 回転(angle: ラジアン)
     static Mat4 rotationZ(float rad) {
         Mat4 res = identity();
@@ -82,12 +90,38 @@ struct Mat4 {
     }
 
     // utility
+    static Mat4 makeRotationFromAxes(const Vec3& r, const Vec3& u, const Vec3& b) {
+        Mat4 res = identity();
+        // 転置になるように
+        res.m[0][0] = r.x;
+        res.m[1][0] = r.y;
+        res.m[2][0] = r.z;
+        res.m[0][1] = u.x;
+        res.m[1][1] = u.y;
+        res.m[2][1] = u.z;
+        res.m[0][2] = b.x;
+        res.m[1][2] = b.y;
+        res.m[2][2] = b.z;
+        return res;
+    }
     void displayColRow() const {
         for (int c = 0; c < cols; ++c) {
             std::cout << "{";
             for (int r = 0; r < rows; ++r) {
                 std::cout << m[c][r];
                 if (r != rows - 1) {
+                    std::cout << ", ";
+                }
+            }
+            std::cout << "} \n";
+        }
+    }
+    void displayRowCol() const {
+        for (int r = 0; r < rows; ++r) {
+            std::cout << "{";
+            for (int c = 0; c < cols; ++c) {
+                std::cout << m[c][r];
+                if (c != cols - 1) {
                     std::cout << ", ";
                 }
             }

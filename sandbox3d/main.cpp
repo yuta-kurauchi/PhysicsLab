@@ -3,6 +3,7 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 #include "math/Vec3.hpp"
+#include "math/Mat4.hpp"
 
 
 /* リソース管理用 */

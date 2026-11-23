@@ -55,14 +55,6 @@ struct Mat4 {
         res.m[3][2] = t.z;
         return res;
     }
-    static Mat4 translation(const Vec4& t) {
-        Mat4 res = identity();
-        res.m[3][0] = t.v[0];
-        res.m[3][1] = t.v[1];
-        res.m[3][2] = t.v[2];
-        res.m[3][3] = t.v[3];
-        return res;
-    }
     // 回転(angle: ラジアン)
     static Mat4 rotationZ(float rad) {
         Mat4 res = identity();
@@ -86,6 +78,19 @@ struct Mat4 {
         res.m[0][2] = -std::sin(rad);
         res.m[2][0] = std::sin(rad);
         res.m[2][2] = std::cos(rad);
+        return res;
+    }
+
+    /* Perspective */
+    // fovY(rad)
+    static Mat4 perspective(float fovY, float aspect, float nearZ, float farZ) {
+        float s = 1 / std::tan(fovY / 2.0f);
+        Mat4 res{};
+        res.m[0][0] = s / aspect;
+        res.m[1][1] = s;
+        res.m[2][2] = farZ / (nearZ - farZ);
+        res.m[2][3] = -1.0f;
+        res.m[3][2] = farZ * nearZ / (nearZ - farZ);
         return res;
     }
 

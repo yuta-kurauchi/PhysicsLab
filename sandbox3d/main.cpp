@@ -105,7 +105,7 @@ using GPUTransferBufPtr = std::unique_ptr<
 
 /* 構造体 */
 struct Vertex {
-    float x, y; // Position
+    float x, y, z; // Position
     float r, g, b; // Color
 };
 
@@ -221,7 +221,7 @@ int main(int argc, char* argv[]) {
     SDL_GPUVertexAttribute vertexAttribute[2]{};
     vertexAttribute[0].location = 0;
     vertexAttribute[0].buffer_slot = 0;
-    vertexAttribute[0].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2;
+    vertexAttribute[0].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
     vertexAttribute[0].offset = offsetof(Vertex, x);
     vertexAttribute[1].location = 1;
     vertexAttribute[1].buffer_slot = 0;
@@ -273,9 +273,9 @@ int main(int argc, char* argv[]) {
 
     // 頂点座標の定義
     Vertex vertices[3] = {
-        { -0.1f, -0.1f, 1.0f, 0.0f, 0.0f },
-        { 0.1f, -0.1f, 0.0f, 1.0f, 0.0f },
-        { 0.0f, 0.1f, 0.0f, 0.0f ,1.0f }
+        { -0.5f, -0.5f, 0.0f, 1.0f, 0.0f, 0.0f },
+        { 0.5f, -0.5f, 0.0f, 0.0f, 1.0f, 0.0f },
+        { 0.0f, 0.5f, 0.0f, 0.0f, 0.0f ,1.0f }
     };
 
     /* Create the vertex buffer */
@@ -408,8 +408,35 @@ int main(int argc, char* argv[]) {
             break;
         }
 
+
         // 描画すべき場所が取得できた場合のみ描画処理を追加
         if (swapchainTexture != nullptr) {
+            // UniformBuffer
+            Mat4 Model = Mat4::identity();
+
+            Vec3 cameraPos(0.0f, 0.0f, 3.0f);
+            Vec3 cameraForward(0.0f, 0.0f, -1.0f);
+            Vec3 worldUp(0.0f, 1.0f, 0.0f);
+            Camera cam(cameraPos, cameraForward, worldUp);
+            Mat4 View = cam.getViewMatrix();
+
+            float fovAngle = 60;
+            float fovRad = fovAngle * PI / 180.0f;
+            float aspect = W / H;
+            float nearZ = 0.1f;
+            float farZ = 100.0f;
+            Mat4 Perspective = Mat4::perspective(fovRad, aspect, nearZ, farZ);
+
+            Mat4 MVP = Perspective * View * Model;
+
+            SDL_PushGPUVertexUniformData(
+                cmdbuf,
+                0,
+                &MVP,
+                sizeof(MVP)
+            );
+
+
             // 描画設定
             SDL_GPUColorTargetInfo colorTargetInfo{};
             colorTargetInfo.texture = swapchainTexture;
@@ -467,10 +494,12 @@ SDL_GPUShader* loadShader(
     SDL_GPUDevice* device,
     const char* shaderFilename
 ) {
+    Uint32 numUniformBuffer = 0;
     /* ファイル名から、stageを特定 */
     SDL_GPUShaderStage stage;
     if (SDL_strstr(shaderFilename, ".vert")) {
         stage = SDL_GPU_SHADERSTAGE_VERTEX;
+        numUniformBuffer = 1;
     } else if (SDL_strstr(shaderFilename, ".frag")) {
         stage = SDL_GPU_SHADERSTAGE_FRAGMENT;
     } else {
@@ -514,6 +543,7 @@ SDL_GPUShader* loadShader(
         format,
         stage
     };
+    shaderInfo.num_uniform_buffers = numUniformBuffer;
     SDL_GPUShader* shader = SDL_CreateGPUShader(device, &shaderInfo);
     if (!shader) {
         SDL_Log("Failed to create shader!");

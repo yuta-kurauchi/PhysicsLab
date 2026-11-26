@@ -100,6 +100,19 @@ using GPUTransferBufPtr = std::unique_ptr<
     GPUTransferBufferDeleter
 >;
 
+struct GPUTextureDeleter {
+    SDL_GPUDevice* device;
+
+    void operator()(SDL_GPUTexture* texture) const {
+        SDL_ReleaseGPUTexture(device, texture);
+    }
+};
+
+using GPUTexPtr = std::unique_ptr<
+    SDL_GPUTexture,
+    GPUTextureDeleter
+>;
+
 
 
 
@@ -126,6 +139,7 @@ const SDL_GPUShaderFormat format_flags = SDL_GPU_SHADERFORMAT_SPIRV |
     SDL_GPU_SHADERFORMAT_DXIL |
     SDL_GPU_SHADERFORMAT_MSL |
     SDL_GPU_SHADERFORMAT_METALLIB;
+const SDL_GPUTextureFormat depthFormat = SDL_GPU_TEXTUREFORMAT_D32_FLOAT;
 // GPUDevice
 const bool debug_mode = true;
 const char* name = nullptr;
@@ -192,6 +206,48 @@ int main(int argc, char* argv[]) {
 
     DeviceWindowReleaseGuard deviceWindowGuard(device.get(), window.get());
 
+
+    /* Depth Texture */
+
+    // TexFormat : depthFormatに設定したformat
+    // それ以外のformatへのフォールバック処理は未実装
+    if (!SDL_GPUTextureSupportsFormat(
+        device.get(),
+        depthFormat,
+        SDL_GPU_TEXTURETYPE_2D,
+        SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET
+    )) {
+        SDL_Log("Unsupported texture format. Check texture format: %d", static_cast<int>(depthFormat));
+        return 1; 
+    } else {
+        std::cout << "Depth Texture Format enum num is " << depthFormat << "\n";
+    }
+
+    SDL_GPUTextureCreateInfo textureCreateInfo{};
+    textureCreateInfo.type = SDL_GPU_TEXTURETYPE_2D;
+    textureCreateInfo.format = depthFormat;
+    textureCreateInfo.usage = SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET;
+    int w = 0, h = 0;
+    if(!SDL_GetWindowSizeInPixels(window.get(), &w, &h)) {
+        SDL_Log("Failed to get window size in pixel: %s", SDL_GetError());
+        return 1;
+    }
+    textureCreateInfo.width = static_cast<Uint32>(w);
+    textureCreateInfo.height = static_cast<Uint32>(h);
+    textureCreateInfo.layer_count_or_depth = 1;
+    textureCreateInfo.num_levels = 1;
+    textureCreateInfo.sample_count = SDL_GPU_SAMPLECOUNT_1;
+
+    GPUTexPtr depthTexture(
+        SDL_CreateGPUTexture(device.get(), &textureCreateInfo),
+        GPUTextureDeleter{device.get()}
+    );
+    if (!depthTexture) {
+        SDL_Log("Failed to create depth texture: %s", SDL_GetError());
+        return 1;
+    }
+
+
     /* CreateShaders */
     InitializeAssetLoader();
     ShaderPtr vertexShader{
@@ -236,6 +292,7 @@ int main(int argc, char* argv[]) {
 
 
     /* Create the pipelines */
+    // color + 通常設定
     SDL_GPUGraphicsPipelineCreateInfo pipelineCreateInfo{};
     pipelineCreateInfo.target_info.num_color_targets = 1;
     SDL_GPUColorTargetDescription colorTarget{};
@@ -245,6 +302,16 @@ int main(int argc, char* argv[]) {
     pipelineCreateInfo.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
     pipelineCreateInfo.vertex_shader = vertexShader.get();
     pipelineCreateInfo.fragment_shader = fragmentShader.get();
+
+    // depthTexture関連
+    SDL_GPUDepthStencilState depthStencilState{};
+    depthStencilState.compare_op = SDL_GPU_COMPAREOP_LESS;
+    depthStencilState.enable_depth_test = true;
+    depthStencilState.enable_depth_write = true;
+    depthStencilState.enable_stencil_test = false;
+    pipelineCreateInfo.depth_stencil_state = depthStencilState;
+    pipelineCreateInfo.target_info.has_depth_stencil_target = true;
+    pipelineCreateInfo.target_info.depth_stencil_format = depthFormat;
 
     pipelineCreateInfo.rasterizer_state.fill_mode = SDL_GPU_FILLMODE_FILL;
     GraphicsPipelinePtr fillPipeline{
@@ -272,10 +339,13 @@ int main(int argc, char* argv[]) {
 
 
     // 頂点座標の定義
-    Vertex vertices[3] = {
-        { -0.5f, -0.5f, 0.0f, 1.0f, 0.0f, 0.0f },
-        { 0.5f, -0.5f, 0.0f, 0.0f, 1.0f, 0.0f },
-        { 0.0f, 0.5f, 0.0f, 0.0f, 0.0f ,1.0f }
+    Vertex vertices[6] = {
+        { -0.5f, -0.5f, 0.5f, 1.0f, 0.0f, 0.0f },
+        { 0.5f, -0.5f, 0.5f, 1.0f, 0.0f, 0.0f },
+        { 0.0f, 0.5f, 0.5f, 1.0f, 0.0f , 0.0f },
+        { 0.3f, -0.5f, -0.5f, 0.0f, 0.0f , 1.0f },
+        { 0.8f, -0.5f, -0.5f, 0.0f, 0.0f , 1.0f },
+        { 0.55f, 0.5f, -0.5f, 0.0f, 0.0f , 1.0f }
     };
 
     /* Create the vertex buffer */
@@ -411,7 +481,7 @@ int main(int argc, char* argv[]) {
 
         // 描画すべき場所が取得できた場合のみ描画処理を追加
         if (swapchainTexture != nullptr) {
-            // UniformBuffer
+            /* Uniform Buffer */
             Mat4 Model = Mat4::identity();
 
             Vec3 cameraPos(0.0f, 0.0f, 3.0f);
@@ -444,8 +514,22 @@ int main(int argc, char* argv[]) {
             colorTargetInfo.load_op = SDL_GPU_LOADOP_CLEAR; // 最初にClearScreen
             colorTargetInfo.store_op = SDL_GPU_STOREOP_STORE;
 
+            // depthTextureの接続
+            SDL_GPUDepthStencilTargetInfo depthStencilTargetInfo{};
+            depthStencilTargetInfo.texture = depthTexture.get();
+            depthStencilTargetInfo.clear_depth = 1.0f;
+            depthStencilTargetInfo.load_op = SDL_GPU_LOADOP_CLEAR;
+            depthStencilTargetInfo.store_op = SDL_GPU_STOREOP_DONT_CARE;
+            depthStencilTargetInfo.stencil_load_op = SDL_GPU_LOADOP_DONT_CARE;
+            depthStencilTargetInfo.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
+            depthStencilTargetInfo.cycle = false;
+            depthStencilTargetInfo.mip_level = 0;
+            depthStencilTargetInfo.layer = 0;
+
+
+
             /* RenderPass */
-            SDL_GPURenderPass* renderPass = SDL_BeginGPURenderPass(cmdbuf, &colorTargetInfo, 1, nullptr);
+            SDL_GPURenderPass* renderPass = SDL_BeginGPURenderPass(cmdbuf, &colorTargetInfo, 1, &depthStencilTargetInfo);
             // renderPass開始できなかった場合には、submitへ
             if (!renderPass) {
                 SDL_Log("Failed to begin GPu render pass: %s", SDL_GetError());
@@ -460,6 +544,7 @@ int main(int argc, char* argv[]) {
                 SDL_BindGPUVertexBuffers(renderPass, 0, &vertexBufferBinding, 1);
 
                 SDL_DrawGPUPrimitives(renderPass, 3, 1, 0, 0);
+                SDL_DrawGPUPrimitives(renderPass, 3, 1, 3, 0);
 
                 // 描画終了
                 SDL_EndGPURenderPass(renderPass);

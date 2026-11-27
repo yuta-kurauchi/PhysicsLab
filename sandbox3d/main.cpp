@@ -299,7 +299,6 @@ int main(int argc, char* argv[]) {
     colorTarget.format = SDL_GetGPUSwapchainTextureFormat(device.get(), window.get());
     pipelineCreateInfo.target_info.color_target_descriptions = &colorTarget;
     pipelineCreateInfo.vertex_input_state = vertexInputState;
-    pipelineCreateInfo.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
     pipelineCreateInfo.vertex_shader = vertexShader.get();
     pipelineCreateInfo.fragment_shader = fragmentShader.get();
 
@@ -313,6 +312,8 @@ int main(int argc, char* argv[]) {
     pipelineCreateInfo.target_info.has_depth_stencil_target = true;
     pipelineCreateInfo.target_info.depth_stencil_format = depthFormat;
 
+    // 三角形
+    pipelineCreateInfo.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
     pipelineCreateInfo.rasterizer_state.fill_mode = SDL_GPU_FILLMODE_FILL;
     GraphicsPipelinePtr fillPipeline{
         SDL_CreateGPUGraphicsPipeline(device.get(), &pipelineCreateInfo),
@@ -324,28 +325,107 @@ int main(int argc, char* argv[]) {
     }
 
     pipelineCreateInfo.rasterizer_state.fill_mode = SDL_GPU_FILLMODE_LINE;
-    GraphicsPipelinePtr linePipeline{
+    GraphicsPipelinePtr framePipeline{
         SDL_CreateGPUGraphicsPipeline(device.get(), &pipelineCreateInfo),
         GraphicsPipelineDeleter{device.get()}
     };
-    if (!linePipeline) {
-        SDL_Log("Failed to create line pipeline: %s", SDL_GetError());
+    if (!framePipeline) {
+        SDL_Log("Failed to create frame pipeline: %s", SDL_GetError());
         return 1;
     }
+
+    // 線分(座標軸)
+    pipelineCreateInfo.primitive_type = SDL_GPU_PRIMITIVETYPE_LINELIST;
+    pipelineCreateInfo.rasterizer_state.fill_mode = SDL_GPU_FILLMODE_FILL;
+    GraphicsPipelinePtr axisPipeline {
+        SDL_CreateGPUGraphicsPipeline(device.get(), &pipelineCreateInfo),
+        GraphicsPipelineDeleter{device.get()}
+    };
+    if (!axisPipeline) {
+        SDL_Log("Failed to create axis pipeline: %s", SDL_GetError());
+        return 1;
+    }
+
 
     /* Shaderの解放 */
     vertexShader.reset();
     fragmentShader.reset();
 
+    /* 8頂点
+    0: { -0.5f, -0.5f, -0.5f }
+    1: { 0.5f, -0.5f, -0.5f }
+    2: { -0.5f, 0.5f, -0.5f }
+    3: { 0.5f, 0.5f, -0.5f }
+    4: { -0.5f, -0.5f, 0.5f }
+    5: { 0.5f, -0.5f, 0.5f }
+    6: { -0.5f, 0.5f, 0.5f }
+    7: { 0.5f, 0.5f, 0.5f }
+    +x: , 1.0f, 0.0f, 0.0f
+    -x: , 0.0f, 1.0f, 1.0f
+    +y: , 0.0f, 1.0f, 0.0f
+    -y: , 1.0f, 0.0f, 1.0f
+    +z: , 0.0f, 0.0f, 1.0f
+    -z: , 1.0f, 1.0f, 0.0f
+    */
 
     // 頂点座標の定義
-    Vertex vertices[6] = {
-        { -0.5f, -0.5f, 0.5f, 1.0f, 0.0f, 0.0f },
+    Vertex vertices[42] = {
+        // 三角形
+        // 457 +z
+        { -0.5f, -0.5f, 0.5f, 0.0f, 0.0f, 1.0f },
+        { 0.5f, -0.5f, 0.5f, 0.0f, 0.0f, 1.0f },
+        { 0.5f, 0.5f, 0.5f, 0.0f, 0.0f, 1.0f },
+        // 476 +z
+        { -0.5f, -0.5f, 0.5f, 0.0f, 0.0f, 1.0f },
+        { 0.5f, 0.5f, 0.5f, 0.0f, 0.0f, 1.0f },
+        { -0.5f, 0.5f, 0.5f, 0.0f, 0.0f, 1.0f },
+        // 102 -z
+        { 0.5f, -0.5f, -0.5f, 1.0f, 1.0f, 0.0f },
+        { -0.5f, -0.5f, -0.5f, 1.0f, 1.0f, 0.0f },
+        { -0.5f, 0.5f, -0.5f, 1.0f, 1.0f, 0.0f },
+        // 123 -z
+        { 0.5f, -0.5f, -0.5f, 1.0f, 1.0f, 0.0f },
+        { -0.5f, 0.5f, -0.5f, 1.0f, 1.0f, 0.0f },
+        { 0.5f, 0.5f, -0.5f, 1.0f, 1.0f, 0.0f },
+        // 513 +x
         { 0.5f, -0.5f, 0.5f, 1.0f, 0.0f, 0.0f },
-        { 0.0f, 0.5f, 0.5f, 1.0f, 0.0f , 0.0f },
-        { 0.3f, -0.5f, -0.5f, 0.0f, 0.0f , 1.0f },
-        { 0.8f, -0.5f, -0.5f, 0.0f, 0.0f , 1.0f },
-        { 0.55f, 0.5f, -0.5f, 0.0f, 0.0f , 1.0f }
+        { 0.5f, -0.5f, -0.5f, 1.0f, 0.0f, 0.0f },
+        { 0.5f, 0.5f, -0.5f, 1.0f, 0.0f, 0.0f },
+        // 537 +x
+        { 0.5f, -0.5f, 0.5f, 1.0f, 0.0f, 0.0f },
+        { 0.5f, 0.5f, -0.5f, 1.0f, 0.0f, 0.0f },
+        { 0.5f, 0.5f, 0.5f, 1.0f, 0.0f, 0.0f },
+        // 046 -x
+        { -0.5f, -0.5f, -0.5f, 0.0f, 1.0f, 1.0f },
+        { -0.5f, -0.5f, 0.5f, 0.0f, 1.0f, 1.0f },
+        { -0.5f, 0.5f, 0.5f, 0.0f, 1.0f, 1.0f },
+        // 062 -x
+        { -0.5f, -0.5f, -0.5f, 0.0f, 1.0f, 1.0f },
+        { -0.5f, 0.5f, 0.5f, 0.0f, 1.0f, 1.0f },
+        { -0.5f, 0.5f, -0.5f, 0.0f, 1.0f, 1.0f },
+        // 673 +y
+        { -0.5f, 0.5f, 0.5f, 0.0f, 1.0f, 0.0f },
+        { 0.5f, 0.5f, 0.5f, 0.0f, 1.0f, 0.0f },
+        { 0.5f, 0.5f, -0.5f, 0.0f, 1.0f, 0.0f },
+        // 632 +y
+        { -0.5f, 0.5f, 0.5f, 0.0f, 1.0f, 0.0f },
+        { 0.5f, 0.5f, -0.5f, 0.0f, 1.0f, 0.0f },
+        { -0.5f, 0.5f, -0.5f, 0.0f, 1.0f, 0.0f },
+        // 015 -y
+        { -0.5f, -0.5f, -0.5f, 1.0f, 0.0f, 1.0f },
+        { 0.5f, -0.5f, -0.5f, 1.0f, 0.0f, 1.0f },
+        { 0.5f, -0.5f, 0.5f, 1.0f, 0.0f, 1.0f },
+        // 054 -y
+        { -0.5f, -0.5f, -0.5f, 1.0f, 0.0f, 1.0f },
+        { 0.5f, -0.5f, 0.5f, 1.0f, 0.0f, 1.0f },
+        { -0.5f, -0.5f, 0.5f, 1.0f, 0.0f, 1.0f },
+        // 座標軸 (x: red, y: green, z: blue)
+        { 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f },
+        { 3.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f },
+        { 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f },
+        { 0.0f, 3.0f, 0.0f, 0.0f, 1.0f, 0.0f },
+        { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f },
+        { 0.0f, 0.0f, 3.0f, 0.0f, 0.0f, 1.0f }
     };
 
     /* Create the vertex buffer */
@@ -437,9 +517,23 @@ int main(int argc, char* argv[]) {
     transferBuffer.reset();
 
     /* MainLoop */
-    bool running = true;
-    while (running) {
 
+    /* LoopSettings */
+    bool isrunning = true;
+    const float PHYSICSDT = 1.0f / 60.0f;
+    float accumulator = 0.0f;
+    Uint64 lastTime = SDL_GetTicksNS();
+
+    bool running = true;
+    float radY = 0.0f;
+    float angluarVelY = 30.0f;
+    while (running) {
+        Uint64 currentTime = SDL_GetTicksNS();
+        Uint64 elapsedNS = currentTime - lastTime;
+        lastTime = currentTime;
+
+        float frameTime = elapsedNS / 1e+9; // ns -> s
+        accumulator += frameTime;
 
         /* Event */
         SDL_Event event;
@@ -482,10 +576,9 @@ int main(int argc, char* argv[]) {
         // 描画すべき場所が取得できた場合のみ描画処理を追加
         if (swapchainTexture != nullptr) {
             /* Uniform Buffer */
-            Mat4 Model = Mat4::identity();
 
-            Vec3 cameraPos(0.0f, 0.0f, 3.0f);
-            Vec3 cameraForward(0.0f, 0.0f, -1.0f);
+            Vec3 cameraPos(2.0f, 2.0f, 2.0f);
+            Vec3 cameraForward(-1.0f, -1.0f, -1.0f);
             Vec3 worldUp(0.0f, 1.0f, 0.0f);
             Camera cam(cameraPos, cameraForward, worldUp);
             Mat4 View = cam.getViewMatrix();
@@ -496,15 +589,6 @@ int main(int argc, char* argv[]) {
             float nearZ = 0.1f;
             float farZ = 100.0f;
             Mat4 Perspective = Mat4::perspective(fovRad, aspect, nearZ, farZ);
-
-            Mat4 MVP = Perspective * View * Model;
-
-            SDL_PushGPUVertexUniformData(
-                cmdbuf,
-                0,
-                &MVP,
-                sizeof(MVP)
-            );
 
 
             // 描画設定
@@ -536,15 +620,37 @@ int main(int argc, char* argv[]) {
                 running = false;
                 isSuccessful = false;
             } else {
-                SDL_BindGPUGraphicsPipeline(renderPass, UsaWireframeMode ? linePipeline.get() : fillPipeline.get());
+                while (accumulator >= PHYSICSDT) {
+                    radY += (angluarVelY * PI / 180.0f) * PHYSICSDT;
+                    accumulator -= PHYSICSDT;
+                }
+
+                // 三角形
+                Mat4 RotationY = Mat4::rotationY(radY);
+                Mat4 Translation = Mat4::translation(Vec3(0.0f, 0.5f, 0.5f));
+                Mat4 Model = RotationY * Translation;
+
+                Mat4 MVP = Perspective * View * Model;
+                SDL_PushGPUVertexUniformData(cmdbuf, 0, &MVP, sizeof(MVP));
+
+                SDL_BindGPUGraphicsPipeline(renderPass, UsaWireframeMode ? framePipeline.get() : fillPipeline.get());
 
                 SDL_GPUBufferBinding vertexBufferBinding{};
                 vertexBufferBinding.buffer = vertexBuffer.get();
                 vertexBufferBinding.offset = 0;
                 SDL_BindGPUVertexBuffers(renderPass, 0, &vertexBufferBinding, 1);
 
-                SDL_DrawGPUPrimitives(renderPass, 3, 1, 0, 0);
-                SDL_DrawGPUPrimitives(renderPass, 3, 1, 3, 0);
+                SDL_DrawGPUPrimitives(renderPass, 36, 1, 0, 0);
+
+                // 軸
+                Model = Mat4::identity();
+
+                MVP = Perspective * View * Model;
+                SDL_PushGPUVertexUniformData(cmdbuf, 0, &MVP, sizeof(MVP));
+
+                SDL_BindGPUGraphicsPipeline(renderPass, axisPipeline.get());
+
+                SDL_DrawGPUPrimitives(renderPass, 6, 1, 36, 0);
 
                 // 描画終了
                 SDL_EndGPURenderPass(renderPass);
